@@ -1,70 +1,25 @@
 # Climate Change Visualized
 
-A globe-first climate visualization built with traditional static HTML, CSS, JavaScript, MapLibre GL, and ERA5-derived monthly assets.
+A globe-first climate visualization for exploring long-term temperature and precipitation anomalies across the planet.
 
-## What it shows
+The project presents ERA5-derived monthly climate patterns through an interactive 3D map, combining spatial cells, animated glyphs, timeline controls, and an optional RONI overlay for climate-cycle context.
 
-- Global temperature anomaly and precipitation anomaly views
-- Hexagon and grid-based map units
+## Highlights
+
+- Global temperature and precipitation anomaly views
+- Hexagon and grid-based spatial units
 - Pulse, column, and cone glyph modes
-- A dual-handle timeline with optional RONI overlay
+- Dual-handle timeline for comparing climate periods
+- RONI overlay for ENSO-related context
 
-## Local development
+## Data
 
-```bash
-npm install
-npm run dev
-```
+The visualization uses ERA5 monthly averaged single-level climate data, NOAA CPC Relative Oceanic Nino Index data, and Natural Earth reference geography.
 
-This starts a plain static file server on `http://127.0.0.1:4173/`.
+## Technology
 
-Build:
+Built with static HTML, CSS, JavaScript, MapLibre GL, and H3.
 
-```bash
-npm run build
-```
+## Status
 
-Preview locally:
-
-```bash
-npm run preview
-```
-
-## Data assets
-
-The app expects browser-ready files in `data/`:
-
-- `metadata.json`
-- `cells-medium.json`
-- `roni.json`
-
-Generate demo assets:
-
-```bash
-npm run generate:data:demo
-```
-
-Regenerate real assets from a local ERA5 monthly archive:
-
-```bash
-npm run generate:data
-```
-
-More detail is in [docs/data.md](docs/data.md).
-
-## Project structure
-
-- `index.html`: static page entry
-- `css/`: application styles
-- `js/`: browser JavaScript modules
-- `vendor/`: browser-loaded third-party libraries
-- `data/`: browser-ready climate assets
-- `scripts/`: data preparation utilities
-- `docs/`: project notes
-
-## Release notes for v0.1
-
-- Public-facing project metadata and README added
-- Unused renderer/helpers removed
-- Test-only and generated clutter cleaned up
-- Startup failure state added for missing data assets
+Version 0.1. Private project backup and early release candidate.
