@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Climate Change Visualized</title>
+  <meta name="description"
+    content="A globe-first climate visualization for exploring temperature and precipitation anomalies over time." />
+  <link rel="icon" href="./assets/favicons/favicon-option4.png" type="image/png" sizes="512x512" />
+  <link rel="shortcut icon" href="./assets/favicons/favicon-option4.png" type="image/png" />
+  <link rel="apple-touch-icon" href="./assets/favicons/favicon-option4.png" />
+  <link rel="stylesheet" href="./vendor/maplibre-gl/maplibre-gl.css" />
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+
+<body>
+  <div id="app"></div>
+  <script type="importmap">
+    {
+      "imports": {
+        "maplibre-gl": "./vendor/maplibre-gl/maplibre-gl-module.js",
+        "h3-js": "./vendor/h3-js/h3-js.es.js"
+      }
+    }
+  </script>
+  <script type="module" src="./js/main.js"></script>
+</body>
+
+</html>

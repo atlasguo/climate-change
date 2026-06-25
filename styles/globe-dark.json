@@ -1,0 +1,117 @@
+{
+  "version": 8,
+  "name": "climate-globe-dark",
+  "projection": {
+    "type": "globe"
+  },
+  "sources": {
+    "ne2-shaded": {
+      "type": "raster",
+      "tiles": [
+        "https://tiles.openfreemap.org/natural_earth/ne2sr/{z}/{x}/{y}.png"
+      ],
+      "tileSize": 256,
+      "minzoom": 0,
+      "maxzoom": 6,
+      "attribution": "OpenFreeMap"
+    },
+    "openmaptiles": {
+      "type": "vector",
+      "url": "https://tiles.openfreemap.org/planet"
+    }
+  },
+  "layers": [
+    {
+      "id": "vector-background",
+      "type": "background",
+      "paint": {
+        "background-color": "#050709"
+      }
+    },
+    {
+      "id": "vector-ne-shaded",
+      "type": "raster",
+      "source": "ne2-shaded",
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "raster-opacity": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          0,
+          0.15,
+          4,
+          0.03
+        ],
+        "raster-saturation": -1,
+        "raster-brightness-max": 0.18
+      }
+    },
+    {
+      "id": "vector-water",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "water",
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "fill-color": "#141719",
+        "fill-opacity": 1
+      }
+    },
+    {
+      "id": "vector-landcover-ice",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "landcover",
+      "filter": ["==", ["get", "class"], "ice"],
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "fill-color": "#5f6266",
+        "fill-opacity": 0.12
+      }
+    },
+    {
+      "id": "vector-boundary-2",
+      "type": "line",
+      "source": "openmaptiles",
+      "source-layer": "boundary",
+      "filter": [
+        "all",
+        ["==", ["get", "admin_level"], 2],
+        ["!=", ["get", "maritime"], 1]
+      ],
+      "layout": {
+        "visibility": "visible",
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#141719",
+        "line-opacity": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          0,
+          0.16,
+          4,
+          0.34
+        ],
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          0,
+          0.55,
+          4,
+          1.1
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "temperature": ["#0a2a6f", "#6fa7e1", "#8b7f72", "#e2826d", "#6f0d0d"],
+  "precipitation": ["#7a3e00", "#cc7a20", "#8b7f72", "#2f9a4d", "#0b5d2a"],
+  "roni": ["#6b3fa0", "#8b6db8", "#7a7d82", "#bfaa5a", "#d4a800"]
+}
