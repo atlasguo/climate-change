@@ -20,17 +20,21 @@ export function createStore(metadata) {
     rangeB: { ...defaultRanges.rangeB },
     periodMonths: 60,
     selectedCell: null,
+    selectedAnchor: null,
     hoveredCell: null,
     hoveredPosition: null,
     densityLevel: 'medium',
-    glyphWidthScale: 0.625,
-    glyphHeightScale: 0.625,
+    glyphWidthScale: 0.5,
+    glyphHeightScale: 0.5,
     symbolOpacity: 0.9,
-    strokeOpacity: 0.05,
+    strokeOpacity: 0.10,
     showCountryBorder: false,
     showCountryLabel: false,
     showCityLabel: false,
-    cameraState: null
+    cameraState: null,
+    viewportDomains: null,
+    displayedH3Resolution: null,
+    displayedGridDegrees: null
   };
 
   const listeners = new Set();
@@ -69,12 +73,6 @@ export function createStore(metadata) {
     setVariable(variable) {
       patch({ variable }, 'variable');
     },
-    setMode(mode) {
-      patch({ mode, periodMonths: normalizePeriodMonths(state.periodMonths, mode) }, 'mode');
-    },
-    setUnit(unit) {
-      patch({ unit }, 'unit');
-    },
     setSymbol(mode, unit) {
       if (state.mode === mode && state.unit === unit) {
         return;
@@ -93,8 +91,13 @@ export function createStore(metadata) {
     setPeriodMonths(periodMonths) {
       patch({ periodMonths: normalizePeriodMonths(periodMonths) }, 'periodMonths');
     },
-    selectCell(cellId) {
-      patch({ selectedCell: cellId }, 'selectedCell');
+    selectCell(cellId, anchor = null) {
+      patch({ selectedCell: cellId, selectedAnchor: cellId ? anchor : null }, 'selectedCell');
+    },
+    remapSelectedCell(cellId) {
+      if (cellId !== state.selectedCell) {
+        patch({ selectedCell: cellId }, 'selectedCellRemap');
+      }
     },
     setHoveredCell(cellId, position = null) {
       patch({ hoveredCell: cellId, hoveredPosition: position }, 'hoveredCell');
@@ -106,6 +109,9 @@ export function createStore(metadata) {
     },
     setCameraState(cameraState) {
       patch({ cameraState }, 'cameraState');
+    },
+    setViewportDomains(viewportDomains) {
+      patch({ viewportDomains }, 'viewportDomains');
     },
     setGlyphSize(glyphWidthScale, glyphHeightScale = glyphWidthScale) {
       if (glyphWidthScale === state.glyphWidthScale && glyphHeightScale === state.glyphHeightScale) {
@@ -127,6 +133,12 @@ export function createStore(metadata) {
     },
     setShowCityLabel(showCityLabel) {
       patch({ showCityLabel }, 'showCityLabel');
+    },
+    setDisplayedResolution(displayedH3Resolution, displayedGridDegrees) {
+      if (state.displayedH3Resolution === displayedH3Resolution && state.displayedGridDegrees === displayedGridDegrees) {
+        return;
+      }
+      patch({ displayedH3Resolution, displayedGridDegrees }, 'displayedResolution');
     },
     resetRanges() {
       patch({ rangeA: { ...defaultRanges.rangeA }, rangeB: { ...defaultRanges.rangeB } }, 'ranges');

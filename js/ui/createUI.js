@@ -1,15 +1,17 @@
-import { buildCellSummary, getAggregatedSeries, getBucketedSeries, getCommittedValueDomains, getSeriesColorDomain, isTrendMode } from '../state/selectors.js';
+import { buildCellSummary, getAggregatedSeries, getBucketedSeries, getCommittedValueDomains, getMonthIndex, getSeriesColorDomain, isTrendMode } from '../state/selectors.js';
 import {
   buildPaletteGradient,
   buildLegendMarkup,
   getModeLabel,
   getVariableLabel,
+  interpolateHex,
   paletteForVariable,
   rampColor,
   RONI_PALETTE,
   summarizeValue
 } from '../scales/climateScales.js';
 import { buildBarRects, buildBucketRingSlices, buildLinePoints, zeroLineY } from '../scales/chartRenderers.js';
+import { getDisplayCell } from '../data/displayCells.js';
 
 
 
@@ -24,6 +26,31 @@ function formatCoordinate(value, axis) {
 
 function formatLatLon(lat, lon) {
   return `${formatCoordinate(lat, 'lat')}, ${formatCoordinate(lon, 'lon')}`;
+}
+
+function buildTickFormatter(ticks, { signed = false } = {}) {
+  let step = Infinity;
+  for (let index = 1; index < ticks.length; index += 1) {
+    const gap = Math.abs(ticks[index] - ticks[index - 1]);
+    if (gap > 1e-9) step = Math.min(step, gap);
+  }
+  let decimals = 0;
+  if (Number.isFinite(step)) {
+    while (decimals < 3 && Math.abs(step * 10 ** decimals - Math.round(step * 10 ** decimals)) > 1e-6) {
+      decimals += 1;
+    }
+    if (decimals === 3) {
+      decimals = Math.max(0, Math.ceil(-Math.log10(step)));
+    }
+  }
+  const format = (value, precision) => {
+    const text = (Math.abs(value) < 0.5 * 10 ** -precision ? 0 : value).toFixed(precision);
+    return signed && value > 0 && Number(text) !== 0 ? `+${text}` : text;
+  };
+  while (decimals < 3 && new Set(ticks.map((value) => format(value, decimals))).size < ticks.length) {
+    decimals += 1;
+  }
+  return (value) => format(value, decimals);
 }
 
 function buildAxisTicks(ticks, top, trackHeight, domain, x, formatter, { textAnchor = 'end', tickDirection = 1 } = {}) {
@@ -185,48 +212,51 @@ function remapTicksToDomain(ticks, sourceDomain, targetDomain) {
 }
 
 function buildCommittedChartDomains(cells, metadata, state) {
-  const rangeBuckets = buildRangeBuckets(metadata, state);
-  const domains = {
-    temperature: {
-      anomaly: [Infinity, -Infinity],
-      raw: [Infinity, -Infinity]
-    },
-    precipitation: {
-      anomaly: [Infinity, -Infinity],
-      raw: [Infinity, -Infinity]
+  const monthOfYear = getMonthOfYear(metadata);
+  const buckets = buildRangeBuckets(metadata, state);
+  const extents = new Float64Array([Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity]);
+  const track = (slot, value) => {
+    if (Number.isFinite(value)) {
+      if (value < extents[slot]) extents[slot] = value;
+      if (value > extents[slot + 1]) extents[slot + 1] = value;
     }
   };
 
-  for (const cell of cells) {
-    for (const variable of ['temperature', 'precipitation']) {
-      const anomalySeries = getAggregatedSeries(cell, metadata, state, variable);
-      const rawSource = variable === 'temperature' ? buildTemperatureRawSeries(metadata, cell) : cell.precipRawSeries;
-      const rawSeries = aggregateBucketSeries(rawSource, metadata, rangeBuckets);
-
-      for (const value of anomalySeries) {
-        if (Number.isFinite(value)) {
-          domains[variable].anomaly[0] = Math.min(domains[variable].anomaly[0], value);
-          domains[variable].anomaly[1] = Math.max(domains[variable].anomaly[1], value);
-        }
+  const zeroBaseline = new Float32Array(12);
+  const stride = cells.length > 8000 ? 2 : 1;
+  for (let cellIndex = 0; cellIndex < cells.length; cellIndex += stride) {
+    const cell = cells[cellIndex];
+    const temp = cell.tempSeries;
+    const baseline = cell.tempBaselineMonthly ?? zeroBaseline;
+    const precip = cell.precipSeries;
+    const precipRaw = cell.precipRawSeries;
+    for (const { startIndex, endIndex } of buckets) {
+      let tempTotal = 0;
+      let baselineTotal = 0;
+      let precipTotal = 0;
+      let precipRawTotal = 0;
+      for (let index = startIndex; index <= endIndex; index += 1) {
+        tempTotal += temp[index];
+        baselineTotal += baseline[monthOfYear[index]];
+        precipTotal += precip[index];
+        precipRawTotal += precipRaw[index];
       }
-
-      for (const value of rawSeries) {
-        if (Number.isFinite(value)) {
-          domains[variable].raw[0] = Math.min(domains[variable].raw[0], value);
-          domains[variable].raw[1] = Math.max(domains[variable].raw[1], value);
-        }
-      }
+      const count = endIndex - startIndex + 1;
+      track(0, tempTotal / count);
+      track(2, (tempTotal + baselineTotal) / count);
+      track(4, (precipTotal / count) * 100);
+      track(6, precipRawTotal / count);
     }
   }
 
   return {
     temperature: {
-      anomaly: buildMinMaxDomain(domains.temperature.anomaly, { includeZero: false, minimumSpan: 0.6 }),
-      raw: buildMinMaxDomain(domains.temperature.raw, { includeZero: false, minimumSpan: 2 })
+      anomaly: buildMinMaxDomain([extents[0], extents[1]], { includeZero: false, minimumSpan: 0.6 }),
+      raw: buildMinMaxDomain([extents[2], extents[3]], { includeZero: false, minimumSpan: 2 })
     },
     precipitation: {
-      anomaly: buildMinMaxDomain(domains.precipitation.anomaly, { includeZero: true, minimumSpan: 4 }),
-      raw: buildMinMaxDomain(domains.precipitation.raw, { includeZero: true, minimumSpan: 10 })
+      anomaly: buildMinMaxDomain([extents[4], extents[5]], { includeZero: true, minimumSpan: 4 }),
+      raw: buildMinMaxDomain([extents[6], extents[7]], { includeZero: true, minimumSpan: 10 })
     }
   };
 }
@@ -260,10 +290,11 @@ function buildTimelineRoniMarkup(monthLabels, roniPoints) {
   const amplitude = 28;
 
   const domain = [-3, 3];
+  const monthIndexes = new Map(monthLabels.map((label, index) => [label, index]));
   const points = roniPoints
     .map((point) => {
-      const index = monthLabels.indexOf(point.monthLabel);
-      if (index === -1) {
+      const index = monthIndexes.get(point.monthLabel);
+      if (index === undefined) {
         return null;
       }
       const ratio = index / Math.max(1, monthLabels.length - 1);
@@ -289,21 +320,22 @@ function buildTimelineRoniMarkup(monthLabels, roniPoints) {
   const clipBelowId = `clip-below-${monthLabels.length}`;
   const areaAboveGradientId = `roni-area-above-${monthLabels.length}`;
   const areaBelowGradientId = `roni-area-below-${monthLabels.length}`;
-  const positiveColor = '#ffe43b';
-  const negativeColor = '#b15bff';
+  const roni = RONI_PALETTE;
+  const positiveColor = roni[4];
+  const negativeColor = roni[0];
 
   return `
     <svg class="timeline-axis__oni-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="RONI index chart">
       <defs>
         <linearGradient id="${areaAboveGradientId}" x1="0" y1="${baselineY}" x2="0" y2="0" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#000000" stop-opacity="0.5" />
-          <stop offset="18%" stop-color="#7e6a18" stop-opacity="0.42" />
-          <stop offset="100%" stop-color="#fff04a" stop-opacity="1" />
+          <stop offset="0%" stop-color="${roni[3]}" stop-opacity="0.6" />
+          <stop offset="30%" stop-color="${roni[3]}" stop-opacity="0.8" />
+          <stop offset="100%" stop-color="${roni[4]}" stop-opacity="1" />
         </linearGradient>
         <linearGradient id="${areaBelowGradientId}" x1="0" y1="${baselineY}" x2="0" y2="${height}" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#000000" stop-opacity="0.5" />
-          <stop offset="18%" stop-color="#4d2e77" stop-opacity="0.44" />
-          <stop offset="100%" stop-color="#d65cff" stop-opacity="1" />
+          <stop offset="0%" stop-color="${roni[1]}" stop-opacity="0.6" />
+          <stop offset="30%" stop-color="${roni[1]}" stop-opacity="0.8" />
+          <stop offset="100%" stop-color="${roni[0]}" stop-opacity="1" />
         </linearGradient>
         <clipPath id="${clipAboveId}">
           <rect x="0" y="0" width="${width}" height="${baselineY}" />
@@ -321,8 +353,8 @@ function buildTimelineRoniMarkup(monthLabels, roniPoints) {
 }
 
 function buildRangeBuckets(metadata, state) {
-  const startIndex = Math.max(0, metadata.monthLabels.indexOf(state.rangeA.start));
-  const endIndex = Math.max(startIndex, metadata.monthLabels.indexOf(state.rangeB.start));
+  const startIndex = Math.max(0, getMonthIndex(metadata, state.rangeA.start));
+  const endIndex = Math.max(startIndex, getMonthIndex(metadata, state.rangeB.start));
   const periodMonths = state.periodMonths ?? 1;
   const buckets = [];
 
@@ -330,7 +362,9 @@ function buildRangeBuckets(metadata, state) {
     const bucketEnd = Math.min(endIndex, index + periodMonths - 1);
     buckets.push({
       start: metadata.monthLabels[index],
-      end: metadata.monthLabels[bucketEnd]
+      end: metadata.monthLabels[bucketEnd],
+      startIndex: index,
+      endIndex: bucketEnd
     });
   }
 
@@ -411,26 +445,29 @@ function monthNumberFromLabel(label) {
   return Number.isInteger(month) && month >= 1 && month <= 12 ? month : null;
 }
 
-function buildTemperatureRawSeries(metadata, cell) {
-  return metadata.monthLabels.map((label, index) => {
-    const month = monthNumberFromLabel(label);
-    const baselineIndex = month == null ? index % 12 : month - 1;
-    const baseline = cell.tempBaselineMonthly?.[baselineIndex] ?? 0;
-    return (cell.tempSeries[index] ?? 0) + baseline;
-  });
+const monthOfYearCache = new WeakMap();
+
+function getMonthOfYear(metadata) {
+  let months = monthOfYearCache.get(metadata.monthLabels);
+  if (!months) {
+    months = Uint8Array.from(metadata.monthLabels, (label, index) => (monthNumberFromLabel(label) ?? (index % 12) + 1) - 1);
+    monthOfYearCache.set(metadata.monthLabels, months);
+  }
+  return months;
 }
 
-function aggregateBucketSeries(source, metadata, buckets) {
-  return buckets.map((bucket) => {
-    const startIndex = Math.max(0, metadata.monthLabels.indexOf(bucket.start));
-    const endIndex = Math.max(startIndex, metadata.monthLabels.indexOf(bucket.end));
+function buildTemperatureRawSeries(metadata, cell) {
+  const monthOfYear = getMonthOfYear(metadata);
+  return Array.from(monthOfYear, (month, index) => (cell.tempSeries[index] ?? 0) + (cell.tempBaselineMonthly?.[month] ?? 0));
+}
+
+function aggregateBucketSeries(source, buckets) {
+  return buckets.map(({ startIndex, endIndex }) => {
     let total = 0;
-    let count = 0;
     for (let index = startIndex; index <= endIndex; index += 1) {
       total += source[index] ?? 0;
-      count += 1;
     }
-    return count ? total / count : 0;
+    return total / (endIndex - startIndex + 1);
   });
 }
 
@@ -445,16 +482,23 @@ function escapeHtml(value) {
 
 const DEFAULT_METADATA_SOURCES = [
   {
-    label: 'Climate',
-    text: 'ERA5, via Climate Data Store',
+    label: 'Climate Data',
+    text: '',
     url: 'https://cds.climate.copernicus.eu/',
-    linkLabel: 'CDS'
+    linkLabel: 'Climate Data Store (ERA5)'
   }
 ];
 
+const RONI_METADATA_SOURCE = {
+  label: 'ENSO',
+  text: 'NOAA CPC Relative Oceanic Nino Index (RONI)',
+  url: 'https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/roni/',
+  linkLabel: 'CPC'
+};
+
 const REFERENCE_METADATA_SOURCES = [
   {
-    label: 'Reference Map',
+    label: '',
     text: 'Global Countries and Cities',
     url: 'https://www.naturalearthdata.com/downloads/50m-cultural-vectors/',
     linkLabel: 'Natural Earth'
@@ -465,20 +509,10 @@ function buildMetadataSourceLine(source) {
   if (!source || (!source.label && !source.text)) {
     return '';
   }
+  const label = escapeHtml(source.label ?? '');
   const text = escapeHtml(source.text ?? '');
   const rawUrl = typeof source.url === 'string' ? source.url : '';
   const url = rawUrl ? escapeHtml(rawUrl) : '';
-
-  try {
-    if (rawUrl.includes('cds.climate.copernicus.eu')) {
-      return `ERA5 (Monthly) - <a href="${url}" target="_blank" rel="noreferrer">Climate Data Store</a>`;
-    }
-    if (rawUrl.includes('cpc.ncep.noaa.gov')) {
-      return `Relative Oceanic Nino Index - <a href="${url}" target="_blank" rel="noreferrer">NOAA CPC</a>`;
-    }
-  } catch (e) {
-    // fall through to default handling
-  }
 
   let linkLabelRaw = typeof source.linkLabel === 'string' ? source.linkLabel : '';
   if (!linkLabelRaw && rawUrl) {
@@ -490,14 +524,17 @@ function buildMetadataSourceLine(source) {
     }
   }
   const linkLabel = escapeHtml(linkLabelRaw || 'source');
-  const valueMarkup = url ? `${text} - <a href="${url}" target="_blank" rel="noreferrer">${linkLabel}</a>` : text;
-  return valueMarkup;
+  const link = url ? `<a href="${url}" target="_blank" rel="noreferrer">${linkLabel}</a>` : '';
+  const value = text && link ? `${text} - ${link}` : link || text;
+  return label ? `${label} - ${value}` : value;
 }
 
 function buildMetadataSourcesMarkup(sources) {
   const baseSources = Array.isArray(sources) && sources.length ? sources : DEFAULT_METADATA_SOURCES;
-  const resolvedSources = [...baseSources, ...REFERENCE_METADATA_SOURCES];
-  return resolvedSources.map(buildMetadataSourceLine).filter(Boolean).join('<br>');
+  const creditsRoni = baseSources.some((source) => /roni/i.test(`${source?.text ?? ''} ${source?.url ?? ''}`));
+  const resolvedSources = [...baseSources, ...(creditsRoni ? [] : [RONI_METADATA_SOURCE]), ...REFERENCE_METADATA_SOURCES];
+  const lines = resolvedSources.map(buildMetadataSourceLine).filter(Boolean);
+  return [...new Set(lines)].join('<br>');
 }
 
 function buildLinePathFromPoints(points) {
@@ -522,7 +559,7 @@ function buildRingHoverModel(labels, values, cx, cy, outerRadius, innerRadius, s
   };
 }
 
-function buildDetailChart(metadata, cell, state, valueDomains, committedChartDomains) {
+function buildDetailChart(metadata, cell, state, valueDomains, committedChartDomains, viewportValueDomains = null, viewportChartDomains = null) {
   if (!cell) {
     return { markup: '', hoverModel: null };
   }
@@ -539,12 +576,12 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
   const mode = state.mode ?? 'pulse';
   const variableLabel = getVariableLabel(variable);
   const modeLabel = getModeLabel(mode);
-  const aIndex = metadata.monthLabels.indexOf(state.rangeA.start);
-  const bIndex = metadata.monthLabels.indexOf(state.rangeB.start);
+  const aIndex = getMonthIndex(metadata, state.rangeA.start);
+  const bIndex = getMonthIndex(metadata, state.rangeB.start);
   const startYear = state.rangeA.start?.split('-')[0] ?? '';
   const endYear = state.rangeB.start?.split('-')[0] ?? '';
   const chartValueScaleMode = state.chartValueScaleMode ?? 'local';
-  const colorDomain = getSeriesColorDomain(cell, metadata, state, variable, valueDomains);
+  const colorDomain = getSeriesColorDomain(cell, metadata, state, variable, valueDomains, viewportValueDomains);
   const palette = paletteForVariable(variable);
   const ringOuterRadius = 142;
   const ringInnerRadius = 26;
@@ -555,7 +592,7 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
   const rangeBuckets = buildRangeBuckets(metadata, state);
   const series = aggregatedSeries;
   const rawSource = variable === 'temperature' ? buildTemperatureRawSeries(metadata, cell) : cell.precipRawSeries;
-  const rawSeries = aggregateBucketSeries(rawSource, metadata, rangeBuckets);
+  const rawSeries = aggregateBucketSeries(rawSource, rangeBuckets);
   const ringLabels = rangeBuckets.map(formatChartBucketLabel);
   const ringSeries = series;
   const localAnomalyDomain = buildMinMaxDomain(series, {
@@ -569,7 +606,9 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
   const anomalyDomain =
     chartValueScaleMode === 'global'
       ? committedChartDomains?.[variable]?.anomaly ?? localAnomalyDomain
-      : localAnomalyDomain;
+      : chartValueScaleMode === 'viewport'
+        ? viewportChartDomains?.[variable]?.anomaly ?? localAnomalyDomain
+        : localAnomalyDomain;
   const rawDomain = localRawDomain;
   const anomalyGuideTicks = buildAnomalyAxisTicks(anomalyDomain);
   const rawGuideTicks = variable === 'temperature' ? remapTicksToDomain(anomalyGuideTicks, anomalyDomain, rawDomain) : buildRawAxisTicks(rawDomain);
@@ -578,8 +617,8 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     variable === 'temperature'
       ? remapTicksToDomain(anomalyTicks, anomalyDomain, rawDomain)
       : filterTicksByPixelGap(rawGuideTicks, rawDomain, chartHeight, 30);
-  const formatAnomalyTick = (value) => (variable === 'temperature' ? `${value >= 0 ? '+' : ''}${value.toFixed(1)}` : `${Math.round(value)}`);
-  const formatRawTick = (value) => (variable === 'temperature' ? `${value.toFixed(0)}` : `${Math.round(value)}`);
+  const formatAnomalyTick = buildTickFormatter(anomalyTicks, { signed: variable === 'temperature' });
+  const formatRawTick = buildTickFormatter(rawTicks);
   const useAlignedDualAxisOnly = variable === 'temperature';
 
   let chartMarkup = '';
@@ -718,15 +757,13 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
   };
 }
 
-export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
+export function createUI(root, store, metadata, rawCells, roniPoints, globalCell = null) {
   const mapStage = root.querySelector('.map-stage');
   const mapLoading = root.querySelector('[data-map-loading]');
   const mapLoadingTitle = root.querySelector('[data-map-loading-title]');
   const mapLoadingDetail = root.querySelector('[data-map-loading-detail]');
-  const baselineRange = root.querySelector('[data-bind="baseline-range"]');
   const metaDatasource = root.querySelector('[data-bind="meta-datasource"]');
   const metaCopyright = root.querySelector('[data-bind="meta-copyright"]');
-  const selectionState = root.querySelector('[data-bind="selection-state"]');
   const detailSummary = root.querySelector('[data-detail-summary]');
   const detailChart = root.querySelector('[data-detail-chart]');
   const timelineSelection = root.querySelector('[data-timeline-selection]');
@@ -752,6 +789,7 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
   const showCountryBorderToggle = root.querySelector('[data-show-country-border]');
   const showCountryLabelToggle = root.querySelector('[data-show-country-label]');
   const showCityLabelToggle = root.querySelector('[data-show-city-label]');
+  const symbolUnitInfo = root.querySelector('[data-bind="symbol-unit-info"]');
   const rangeSliders = [...root.querySelectorAll('[data-range]')];
   const rangeStepButtons = [...root.querySelectorAll('[data-range-step]')];
   const mobileToggleButtons = [...root.querySelectorAll('[data-mobile-toggle]')];
@@ -760,7 +798,8 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
     b: { year: root.querySelector('[data-range-input="b-year"]') }
   };
   let currentDetailChartModel = null;
-  const detailCellLookup = new Map([...cells, ...rawCells].map((cell) => [cell.id, cell]));
+  const lookupCell = (id) => (id == null ? null : getDisplayCell(id) ?? null);
+  const defaultDetailCell = () => lookupCell('global') ?? globalCell;
 
   if (appTitle) {
     appTitle.textContent = metadata.title ?? 'Climate Change Visualized';
@@ -771,9 +810,6 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
   }
   if (metaCopyright) {
     metaCopyright.innerHTML = '© Atlas Guo (2026), <a href="https://cartoguophy.com" target="_blank" rel="noreferrer">CartoGuophy.com</a>';
-  }
-  if (baselineRange) {
-    baselineRange.textContent = `${metadata.baselineStart} to ${metadata.baselineEnd}`;
   }
 
   for (const button of variableButtons) {
@@ -790,20 +826,24 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
 
   detailChart?.addEventListener('change', (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement)) {
+    if (!(target instanceof HTMLInputElement) || target.type !== 'radio') {
       return;
     }
-    if (target.matches('[data-legend-color-scale]')) {
-      store.setColorScaleMode(target.checked ? 'global' : 'local');
-      return;
+    if (target.name === 'legend-value-scale') {
+      store.setChartValueScaleMode(target.value);
     }
-    if (target.matches('[data-chart-value-scale]')) {
-      store.setChartValueScaleMode(target.checked ? 'global' : 'local');
+  });
+
+  const colorScaleGroup = root.querySelector('[data-color-scale-group]');
+  colorScaleGroup?.addEventListener('change', (event) => {
+    const target = event.target;
+    if (target instanceof HTMLInputElement && target.name === 'panel-color-scale') {
+      store.setColorScaleMode(target.value);
     }
   });
 
   const tickItems = [];
-  for (const label of monthLabels) {
+  for (const [index, label] of monthLabels.entries()) {
     const [year, month] = label.split('-').map(Number);
     if (month === 1) {
       tickItems.push({
@@ -811,7 +851,7 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
         annual: true,
         major: year % 10 === 0,
         medium: year % 5 === 0,
-        ratio: monthLabels.indexOf(label) / Math.max(1, monthLabels.length)
+        ratio: index / Math.max(1, monthLabels.length)
       });
     }
   }
@@ -842,8 +882,8 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
     });
     input.addEventListener('input', () => {
       const currentState = store.getState();
-      let aValue = monthLabels.indexOf(currentState.rangeA.start);
-      let bValue = monthLabels.indexOf(currentState.rangeB.start) + 1;
+      let aValue = getMonthIndex(metadata, currentState.rangeA.start);
+      let bValue = getMonthIndex(metadata, currentState.rangeB.start) + 1;
 
       if (input.dataset.range === 'a-point') {
         aValue = Number(input.value);
@@ -885,13 +925,13 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
         return;
       }
       const candidate = `${yearNum}-${currentMonth}`;
-      const parsedIndex = monthLabels.indexOf(candidate);
+      const parsedIndex = getMonthIndex(metadata, candidate);
       if (parsedIndex === -1) {
         fields.year.value = currentLabel.split('-')[0];
         return;
       }
-      const aIndex = monthLabels.indexOf(currentState.rangeA.start);
-      const bIndex = monthLabels.indexOf(currentState.rangeB.start);
+      const aIndex = getMonthIndex(metadata, currentState.rangeA.start);
+      const bIndex = getMonthIndex(metadata, currentState.rangeB.start);
       setRangeIndexes(key === 'a' ? parsedIndex : aIndex, key === 'b' ? parsedIndex : bIndex);
     };
 
@@ -904,12 +944,12 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
         return;
       }
       const candidate = `${yearNum}-${currentMonth}`;
-      const parsedIndex = monthLabels.indexOf(candidate);
+      const parsedIndex = getMonthIndex(metadata, candidate);
       if (parsedIndex === -1) {
         return;
       }
-      const aIndex = monthLabels.indexOf(currentState.rangeA.start);
-      const bIndex = monthLabels.indexOf(currentState.rangeB.start);
+      const aIndex = getMonthIndex(metadata, currentState.rangeA.start);
+      const bIndex = getMonthIndex(metadata, currentState.rangeB.start);
       setRangeIndexes(key === 'a' ? parsedIndex : aIndex, key === 'b' ? parsedIndex : bIndex);
     };
 
@@ -931,8 +971,8 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
       const delta = Number(rawDelta);
       const [rangeKey, unit] = target.split('-');
       const currentState = store.getState();
-      const aIndex = monthLabels.indexOf(currentState.rangeA.start);
-      const bIndex = monthLabels.indexOf(currentState.rangeB.start);
+      const aIndex = getMonthIndex(metadata, currentState.rangeA.start);
+      const bIndex = getMonthIndex(metadata, currentState.rangeB.start);
       const step = unit === 'year' ? delta * 12 : delta;
       setRangeIndexes(rangeKey === 'a' ? aIndex + step : aIndex, rangeKey === 'b' ? bIndex + step : bIndex);
     });
@@ -996,7 +1036,7 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function downloadDataUrl(dataUrl, filename) {
@@ -1014,21 +1054,87 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
     return `${prefix}-${stamp}.png`;
   }
 
+  function loadSvgImage(svg, width, height) {
+    const clonedSvg = svg.cloneNode(true);
+    clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clonedSvg.setAttribute('width', String(width));
+    clonedSvg.setAttribute('height', String(height));
+    clonedSvg.setAttribute('font-family', "'IBM Plex Sans', 'Segoe UI', Arial, sans-serif");
+    const markup = new XMLSerializer().serializeToString(clonedSvg);
+    const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml;charset=utf-8' }));
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = url;
+    }).finally(() => URL.revokeObjectURL(url));
+  }
+
+  async function downloadCanvas(canvas, prefix) {
+    const blob = canvas.toBlob ? await new Promise((resolve) => canvas.toBlob(resolve, 'image/png')) : null;
+    if (blob) {
+      downloadBlob(blob, buildExportFilename(prefix));
+    } else {
+      downloadDataUrl(canvas.toDataURL('image/png'), buildExportFilename(prefix));
+    }
+  }
+
+  function getEffectiveOpacity(element, boundary) {
+    let opacity = 1;
+    for (let node = element; node && node !== boundary; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') {
+        return 0;
+      }
+      opacity *= Number.parseFloat(style.opacity) || 0;
+    }
+    return opacity;
+  }
+
   async function exportMapPng() {
-    const canvas = root.querySelector('#map canvas.maplibregl-canvas');
-    if (!(canvas instanceof HTMLCanvasElement)) {
+    const mapCanvas = root.querySelector('#map canvas.maplibregl-canvas');
+    if (!(mapCanvas instanceof HTMLCanvasElement) || !mapStage) {
+      return;
+    }
+    const canvasRect = mapCanvas.getBoundingClientRect();
+    if (!canvasRect.width || !canvasRect.height) {
       return;
     }
 
-    if (canvas.toBlob) {
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-      if (blob) {
-        downloadBlob(blob, buildExportFilename('climate-map'));
+    const output = document.createElement('canvas');
+    output.width = mapCanvas.width;
+    output.height = mapCanvas.height;
+    const context = output.getContext('2d');
+    if (!context) {
+      return;
+    }
+    const scale = mapCanvas.width / canvasRect.width;
+    context.fillStyle = '#050607';
+    context.fillRect(0, 0, output.width, output.height);
+    context.drawImage(mapCanvas, 0, 0);
+
+    const glyphs = [...mapStage.querySelectorAll('.glyph-card__svg')]
+      .map((svg) => ({ svg, rect: svg.getBoundingClientRect(), opacity: getEffectiveOpacity(svg, mapStage) }))
+      .filter(({ rect, opacity }) => rect.width > 0 && rect.height > 0 && opacity > 0.01);
+    const images = await Promise.all(
+      glyphs.map(({ svg, rect }) => loadSvgImage(svg, rect.width, rect.height).catch(() => null))
+    );
+    glyphs.forEach(({ rect, opacity }, index) => {
+      if (!images[index]) {
         return;
       }
-    }
+      context.globalAlpha = Math.min(1, opacity);
+      context.drawImage(
+        images[index],
+        (rect.left - canvasRect.left) * scale,
+        (rect.top - canvasRect.top) * scale,
+        rect.width * scale,
+        rect.height * scale
+      );
+    });
+    context.globalAlpha = 1;
 
-    downloadDataUrl(canvas.toDataURL('image/png'), buildExportFilename('climate-map'));
+    await downloadCanvas(output, 'climate-map');
   }
 
   async function exportChartPng() {
@@ -1037,44 +1143,20 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
       return;
     }
 
-    const serializer = new XMLSerializer();
-    const clonedSvg = svg.cloneNode(true);
-    clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    const svgBlob = new Blob([serializer.serializeToString(clonedSvg)], { type: 'image/svg+xml;charset=utf-8' });
-    const svgUrl = URL.createObjectURL(svgBlob);
-
-    try {
-      const image = await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = svgUrl;
-      });
-
-      const viewBox = svg.viewBox.baseVal;
-      const width = viewBox?.width ? Math.round(viewBox.width) : 428;
-      const height = viewBox?.height ? Math.round(viewBox.height) : 388;
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext('2d');
-      if (!context) {
-        return;
-      }
-      context.drawImage(image, 0, 0, width, height);
-
-      if (canvas.toBlob) {
-        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-        if (blob) {
-          downloadBlob(blob, buildExportFilename('climate-chart'));
-          return;
-        }
-      }
-
-      downloadDataUrl(canvas.toDataURL('image/png'), buildExportFilename('climate-chart'));
-    } finally {
-      URL.revokeObjectURL(svgUrl);
+    const viewBox = svg.viewBox.baseVal;
+    const width = viewBox?.width ? Math.round(viewBox.width) : 428;
+    const height = viewBox?.height ? Math.round(viewBox.height) : 388;
+    const pixelRatio = 2;
+    const image = await loadSvgImage(svg, width, height);
+    const canvas = document.createElement('canvas');
+    canvas.width = width * pixelRatio;
+    canvas.height = height * pixelRatio;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return;
     }
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    await downloadCanvas(canvas, 'climate-chart');
   }
 
   exportMapButton?.addEventListener('click', () => {
@@ -1094,8 +1176,8 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
       return;
     }
 
-    const hoveredCell = detailCellLookup.get(state.hoveredCell);
-    if (!hoveredCell) {
+    const hoveredCell = lookupCell(state.hoveredCell);
+    if (!hoveredCell || hoveredCell.isGlobal) {
       tooltip.hidden = true;
       tooltipCellId = null;
       return;
@@ -1109,7 +1191,7 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
     }
     tooltipCellId = state.hoveredCell;
 
-    const summary = buildCellSummary(hoveredCell, metadata, state, cachedValueDomains);
+    const summary = buildCellSummary(hoveredCell, metadata, state);
     const variableLabel = getVariableLabel(state.variable ?? 'temperature');
     tooltip.innerHTML = `
       <strong>${formatLatLon(summary.lat, summary.lon)}</strong>
@@ -1256,14 +1338,53 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
   detailChart?.addEventListener('pointerleave', hideDetailChartHover);
   detailChart?.addEventListener('pointercancel', hideDetailChartHover);
 
-  let cachedValueDomains = getCommittedValueDomains(cells, metadata, store.getState());
-  let cachedChartValueDomains = buildCommittedChartDomains(cells, metadata, store.getState());
-  let cachedTrendMode = isTrendMode(metadata, store.getState());
+  const rightPanel = root.querySelector('.panel--right');
+  let pointerOverRightPanel = false;
+  rightPanel?.addEventListener('pointerenter', () => { pointerOverRightPanel = true; });
+  rightPanel?.addEventListener('pointerleave', () => { pointerOverRightPanel = false; });
+  let lastPreviewCellId = null;
 
-  function refreshCommittedMetrics(state) {
-    cachedValueDomains = getCommittedValueDomains(cells, metadata, state);
-    cachedChartValueDomains = buildCommittedChartDomains(cells, metadata, state);
-    cachedTrendMode = isTrendMode(metadata, state);
+  const globalDomainCache = { key: null, value: null, chart: null };
+  const cachedTrendMode = isTrendMode(metadata, store.getState());
+
+  function getGlobalDomains(state, kind) {
+    const key = `${state.rangeA.start}|${state.rangeB.start}|${state.periodMonths ?? 1}`;
+    if (globalDomainCache.key !== key) {
+      globalDomainCache.key = key;
+      globalDomainCache.value = null;
+      globalDomainCache.chart = null;
+    }
+    if (!globalDomainCache[kind]) {
+      globalDomainCache[kind] =
+        kind === 'value'
+          ? getCommittedValueDomains(rawCells, metadata, state)
+          : buildCommittedChartDomains(rawCells, metadata, state);
+    }
+    return globalDomainCache[kind];
+  }
+
+  function isViewportScaleActive(state) {
+    return state.colorScaleMode === 'viewport' || state.chartValueScaleMode === 'viewport';
+  }
+
+  function resolveViewportDomains(state) {
+    const domains = state.viewportDomains;
+    if (!isViewportScaleActive(state)) {
+      return { value: null, chart: null };
+    }
+    if (!domains?.temperature || !domains?.precipitation) {
+      return {
+        value: state.colorScaleMode === 'viewport' ? getGlobalDomains(state, 'value') : null,
+        chart: state.chartValueScaleMode === 'viewport' ? getGlobalDomains(state, 'chart') : null
+      };
+    }
+    return {
+      value: domains,
+      chart: {
+        temperature: { anomaly: buildMinMaxDomain(domains.temperature, { minimumSpan: 0.6 }) },
+        precipitation: { anomaly: buildMinMaxDomain(domains.precipitation, { includeZero: true, minimumSpan: 4 }) }
+      }
+    };
   }
 
   return {
@@ -1288,19 +1409,18 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
         return;
       }
 
-      if (
-        changedKey === 'init' ||
-        changedKey === 'mode' ||
-        changedKey === 'symbol' ||
-        changedKey === 'variable' ||
-        changedKey === 'ranges' ||
-        changedKey === 'periodMonths'
-      ) {
-        refreshCommittedMetrics(state);
+      if (changedKey === 'viewportDomains' && !isViewportScaleActive(state)) {
+        return;
       }
 
       for (const button of variableButtons) {
         button.classList.toggle('is-active', button.dataset.variable === state.variable);
+        button.setAttribute('aria-pressed', String(button.dataset.variable === state.variable));
+      }
+
+      const activeColorScaleRadio = colorScaleGroup?.querySelector(`input[value="${state.colorScaleMode ?? 'local'}"]`);
+      if (activeColorScaleRadio && !activeColorScaleRadio.checked) {
+        activeColorScaleRadio.checked = true;
       }
 
       if (mapLoading) {
@@ -1308,10 +1428,77 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
       }
 
       for (const button of symbolButtons) {
-        button.classList.toggle(
-          'is-active',
-          button.dataset.symbolMode === state.mode && button.dataset.symbolUnit === state.unit
-        );
+        const active = button.dataset.symbolMode === state.mode && button.dataset.symbolUnit === state.unit;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+        const modeIcon = button.querySelector('.symbol-button__mode');
+        if (modeIcon) {
+          if (active) {
+            const palette = paletteForVariable(state.variable);
+            const mode = button.dataset.symbolMode;
+            if (mode === 'pulse') {
+              const existingDefs = modeIcon.querySelector('defs.palette-defs');
+              const stops = palette
+                .map((c, i) => `<stop offset="${(i / (palette.length - 1) * 100).toFixed(0)}%" stop-color="${c}" />`)
+                .join('');
+              const gradML = `<linearGradient id="sym-grad-active" x1="0" y1="1" x2="1" y2="0">${stops}</linearGradient>`;
+              if (existingDefs) {
+                existingDefs.innerHTML = gradML;
+              } else {
+                const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+                defs.classList.add('palette-defs');
+                defs.innerHTML = gradML;
+                modeIcon.prepend(defs);
+              }
+              const line = modeIcon.querySelector('polyline');
+              if (line) line.setAttribute('stroke', 'url(#sym-grad-active)');
+            } else if (mode === 'shade') {
+              const rects = modeIcon.querySelectorAll('rect');
+              const n = rects.length;
+              rects.forEach((rect, i) => {
+                const t = n > 1 ? i / (n - 1) : 0.5;
+                const idx = t * (palette.length - 1);
+                const lo = Math.floor(idx);
+                const hi = Math.min(palette.length - 1, lo + 1);
+                rect.setAttribute('fill', interpolateHex(palette[lo], palette[hi], idx - lo));
+              });
+            } else if (mode === 'ring') {
+              const circles = modeIcon.querySelectorAll('circle');
+              const n = circles.length;
+              circles.forEach((circle, i) => {
+                const t = n > 1 ? 1 - i / (n - 1) : 0.5;
+                const idx = t * (palette.length - 1);
+                const lo = Math.floor(idx);
+                const hi = Math.min(palette.length - 1, lo + 1);
+                circle.setAttribute('stroke', interpolateHex(palette[lo], palette[hi], idx - lo));
+              });
+            }
+          } else {
+            const defs = modeIcon.querySelector('defs.palette-defs');
+            if (defs) defs.remove();
+            for (const el of modeIcon.querySelectorAll('polyline[stroke]')) {
+              el.setAttribute('stroke', 'currentColor');
+            }
+            for (const el of modeIcon.querySelectorAll('rect[fill]')) {
+              el.setAttribute('fill', 'currentColor');
+            }
+            for (const el of modeIcon.querySelectorAll('circle[stroke]')) {
+              el.setAttribute('stroke', 'currentColor');
+            }
+          }
+        }
+      }
+
+      if (symbolUnitInfo) {
+        const h3Res = state.displayedH3Resolution;
+        const gridDeg = state.displayedGridDegrees;
+        if (state.unit === 'grid' && gridDeg != null) {
+          symbolUnitInfo.textContent = `Grid ${gridDeg}°`;
+        } else if (h3Res != null) {
+          symbolUnitInfo.textContent = `H3 res ${h3Res}`;
+        } else {
+          symbolUnitInfo.textContent = '';
+        }
       }
 
       for (const option of [...periodSelect.options]) {
@@ -1382,8 +1569,8 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
       rangeInputs.b.year.value = state.rangeB.start.split('-')[0];
 
       const inputState = {
-        'a-point': monthLabels.indexOf(state.rangeA.start),
-        'b-point': monthLabels.indexOf(state.rangeB.start) + 1
+        'a-point': getMonthIndex(metadata, state.rangeA.start),
+        'b-point': getMonthIndex(metadata, state.rangeB.start) + 1
       };
       const aRatio = inputState['a-point'] / Math.max(1, monthLabels.length);
       const bRatio = inputState['b-point'] / Math.max(1, monthLabels.length);
@@ -1404,28 +1591,33 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
           : `inset(0 0 0 ${Math.max(0, midpoint).toFixed(3)}%)`;
       }
 
-      const hoveredCell = detailCellLookup.get(state.hoveredCell) ?? null;
-      const selectedCell = detailCellLookup.get(state.selectedCell) ?? null;
-      const locked = Boolean(selectedCell);
-      const previewCell = selectedCell ?? hoveredCell ?? cells[0] ?? null;
+      const hoveredCell = lookupCell(state.hoveredCell);
+      const selectedCell = lookupCell(state.selectedCell);
+      const candidateCell = selectedCell ?? hoveredCell;
+      if (candidateCell) {
+        lastPreviewCellId = candidateCell.id;
+      }
+      const previewCell =
+        candidateCell ?? (pointerOverRightPanel ? lookupCell(lastPreviewCellId) : null) ?? defaultDetailCell();
 
       if (previewCell) {
-        const summary = buildCellSummary(previewCell, metadata, state, cachedValueDomains);
+        const viewportDomains = resolveViewportDomains(state);
+        const summary = buildCellSummary(previewCell, metadata, state);
         const detailSeries = getAggregatedSeries(previewCell, metadata, state, summary.variable);
         const detailStats = computeSeriesStats(detailSeries);
-        if (selectionState) {
-          selectionState.textContent = locked
-            ? `Locked / ${formatLatLon(summary.lat, summary.lon)}`
-            : hoveredCell
-              ? `Hover / ${formatLatLon(summary.lat, summary.lon)}`
-              : `Preview / ${formatLatLon(summary.lat, summary.lon)}`;
-        }
+        const anchor = previewCell === selectedCell ? state.selectedAnchor : null;
+        const locationLabel = previewCell.isGlobal ? 'Location' : 'Coordinates';
+        const locationValue = previewCell.isGlobal
+          ? escapeHtml(previewCell.label ?? 'Global average')
+          : anchor
+            ? formatLatLon(anchor.lat, anchor.lon)
+            : formatLatLon(previewCell.lat, previewCell.lon);
         if (detailSummary) {
           detailSummary.innerHTML = `
             <div class="detail-grid detail-grid--summary">
               <div>
-                <span>Center Coordinates</span>
-                <strong>${formatLatLon(summary.lat, summary.lon)}</strong>
+                <span>${locationLabel}</span>
+                <strong>${locationValue}</strong>
               </div>
               <div>
                 <span>Average</span>
@@ -1444,7 +1636,9 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
         }
 
         if (detailChart) {
-          const chart = buildDetailChart(metadata, previewCell, state, cachedValueDomains, cachedChartValueDomains);
+          const globalValueDomains = state.colorScaleMode === 'global' ? getGlobalDomains(state, 'value') : null;
+          const globalChartDomains = state.chartValueScaleMode === 'global' ? getGlobalDomains(state, 'chart') : null;
+          const chart = buildDetailChart(metadata, previewCell, state, globalValueDomains, globalChartDomains, viewportDomains.value, viewportDomains.chart);
           currentDetailChartModel = chart.hoverModel;
           detailChart.innerHTML = chart.markup;
           const legend = detailChart.querySelector('[data-legend]');
@@ -1452,12 +1646,13 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
             const legendDomainOverrides =
               state.colorScaleMode === 'local'
                 ? { [state.variable ?? 'temperature']: chart.colorDomain }
-                : cachedValueDomains;
+                : state.colorScaleMode === 'viewport'
+                  ? viewportDomains.value
+                  : globalValueDomains;
             legend.innerHTML = buildLegendMarkup(
               state.variable ?? 'temperature',
               cachedTrendMode,
               legendDomainOverrides,
-              state.colorScaleMode ?? 'local',
               true,
               state.chartValueScaleMode ?? 'local'
             );
@@ -1467,9 +1662,6 @@ export function createUI(root, store, metadata, cells, rawCells, roniPoints) {
           currentDetailChartModel = null;
         }
       } else {
-        if (selectionState) {
-          selectionState.textContent = '';
-        }
         if (detailSummary) {
           detailSummary.innerHTML = '';
         }

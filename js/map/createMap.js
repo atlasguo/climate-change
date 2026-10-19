@@ -1,6 +1,7 @@
 import maplibregl from 'maplibre-gl';
-import { cellToBoundary, cellToChildren, cellToLatLng, cellToParent, getRes0Cells, getResolution, isValidCell, latLngToCell } from 'h3-js';
-import { buildCellSummary, buildRenderableCells, getCommittedValueDomains, getDensityLevelForZoom } from '../state/selectors.js';
+import { cellToBoundary, cellToChildren, getRes0Cells, latLngToCell } from 'h3-js';
+import { buildRenderableCells, getCommittedValueDomains, getDensityLevelForZoom } from '../state/selectors.js';
+import { getDisplayCell, getGridCellIdAt, getGridDisplayCells, getGridIndexes, getH3DisplayCells } from '../data/displayCells.js';
 import { createGlyphOverlay } from './createGlyphOverlay.js';
 
 const H3_SOURCE_ID = 'climate-h3-cells';
@@ -18,8 +19,6 @@ const GRID_HOVERED_FILL_LAYER_ID = 'climate-grid-hovered-fill';
 const GRID_HOVERED_LAYER_ID = 'climate-grid-hovered';
 const GRID_SELECTED_FILL_LAYER_ID = 'climate-grid-selected-fill';
 const GRID_SELECTED_LAYER_ID = 'climate-grid-selected';
-const H3_CENTER_DOT_SOURCE_ID = 'climate-h3-center-dots';
-const H3_CENTER_DOT_LAYER_ID = 'climate-h3-center-dots-layer';
 const COUNTRY_BORDER_SOURCE_ID = 'climate-country-borders';
 const COUNTRY_BORDER_LAYER_ID = 'climate-country-borders-layer';
 const COUNTRY_LABEL_SOURCE_ID = 'climate-country-labels';
@@ -29,12 +28,9 @@ const CITY_LABEL_LAYER_ID = 'climate-city-labels-layer';
 const H3_FEATURE_COLLECTION_CACHE = new Map();
 const GRID_FEATURE_COLLECTION_CACHE = new Map();
 const GRID_LINE_FEATURE_COLLECTION_CACHE = new Map();
-const GRID_LAYOUT_CACHE = new Map();
-const H3_CELL_AGGREGATION_CACHE = new Map();
-const H3_BOUNDARY_CACHE = new Map();
-const H3_CENTER_CACHE = new Map();
 const H3_MIN_RESOLUTION = 0;
-const GLYPHS_ENABLED = true;
+const GRID_DEGREE_LEVELS = [10, 5, 2];
+const GRID_DEFAULT_DEGREES = 10;
 const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
 const H3_ADAPTIVE_REFERENCE_GLYPH_SCALE = {
   glyphWidthScale: 1,
@@ -301,7 +297,7 @@ async function addReferenceLabelLayers(map, state) {
           visibility: 'none'
         },
         paint: {
-          'line-color': '#141719',
+          'line-color': '#181c1f',
           'line-opacity': [
             'interpolate',
             ['linear'],
@@ -348,7 +344,7 @@ async function addReferenceLabelLayers(map, state) {
           6.2,
           11.4
         ],
-        'text-font': ['Noto Sans Regular', 'Open Sans Regular', 'Arial Unicode MS Regular'],
+        'text-font': ['Noto Sans Regular'],
         'text-letter-spacing': 0.08,
         'text-max-width': 8,
         'text-allow-overlap': false,
@@ -410,7 +406,7 @@ async function addReferenceLabelLayers(map, state) {
           6.2,
           11.4
         ],
-        'text-font': ['Noto Sans Regular', 'Open Sans Regular', 'Arial Unicode MS Regular'],
+        'text-font': ['Noto Sans Regular'],
         'text-letter-spacing': 0.02,
         'text-max-width': 6,
         'text-allow-overlap': false,
@@ -446,122 +442,24 @@ async function addReferenceLabelLayers(map, state) {
 }
 
 
-function aggregateCellsToH3Resolution(cells, resolution, baseResolution) {
-  if (resolution >= baseResolution) {
-    return cells.map((cell) => ({
-      ...cell,
-      sourceId: cell.sourceId ?? cell.id
-    }));
-  }
-
-  const cacheKey = `${baseResolution}->${resolution}`;
-  if (H3_CELL_AGGREGATION_CACHE.has(cacheKey)) {
-    return H3_CELL_AGGREGATION_CACHE.get(cacheKey);
-  }
-
-  const grouped = new Map();
-
-  for (const cell of cells) {
-    const parentIndex = cellToParent(cell.h3Index, resolution);
-    if (!grouped.has(parentIndex)) {
-      grouped.set(parentIndex, []);
-    }
-    grouped.get(parentIndex).push(cell);
-  }
-
-  const aggregated = [...grouped.entries()]
-    .map(([h3Index, members]) => {
-      const [lat, lon] = cellToLatLng(h3Index);
-
-      const nearest = members.reduce((best, cell) => {
-        const d = (cell.lat - lat) ** 2 + (cell.lon - lon) ** 2;
-        const bd = (best.lat - lat) ** 2 + (best.lon - lon) ** 2;
-        return d < bd ? cell : best;
-      });
-
-      return {
-        id: h3Index,
-        sourceId: nearest.sourceId ?? nearest.id,
-        lat: nearest.lat,
-        lon: nearest.lon,
-        h3Index,
-        h3Center: { lat, lon },
-        tempSeries: nearest.tempSeries,
-        precipSeries: nearest.precipSeries,
-        precipRawSeries: nearest.precipRawSeries,
-        tempBaselineMonthly: nearest.tempBaselineMonthly,
-        precipBaselineMonthly: nearest.precipBaselineMonthly,
-        tempTrendPerDecade: nearest.tempTrendPerDecade,
-        precipTrendPerDecade: nearest.precipTrendPerDecade
-      };
-    })
-    .sort((a, b) => {
-      if (Math.abs(a.lat - b.lat) > 0.01) {
-        return b.lat - a.lat;
-      }
-      return a.lon - b.lon;
-    })
-    .map((cell, index) => ({
-      ...cell,
-      sampleRank: index
-    }));
-
-  H3_CELL_AGGREGATION_CACHE.set(cacheKey, aggregated);
-  return aggregated;
-}
-
-function buildGlobalH3Indexes(resolution) {
-  if (resolution === 0) {
-    return getRes0Cells();
-  }
-
-  return getRes0Cells().flatMap((cell) => cellToChildren(cell, resolution));
-}
-
-function resolveDisplayedCellId(cellId, displayedResolution) {
-  if (!cellId) {
-    return null;
-  }
-
-  if (!isValidCell(cellId) || displayedResolution == null) {
-    return cellId;
-  }
-
-  const cellResolution = getResolution(cellId);
-  if (cellResolution === -1) {
-    return null;
-  }
-
-  if (displayedResolution >= cellResolution) {
-    return cellId;
-  }
-
-  return cellToParent(cellId, displayedResolution);
-}
-
-function buildOverlayState(cells, rawCells, metadata, state, densityLevel, h3Resolution) {
+function buildOverlayState(rawCells, metadata, state, densityLevel, h3Resolution, gridDegrees, viewportDomains = null) {
   const isGridMode = state.unit === 'grid';
-  const usesH3Aggregation = !isGridMode && Number.isInteger(metadata.h3Resolution);
-  const effectiveCells = isGridMode
-    ? rawCells
-    : usesH3Aggregation && Number.isInteger(h3Resolution)
-      ? aggregateCellsToH3Resolution(cells, h3Resolution, metadata.h3Resolution)
-      : cells;
-  const displayedSelectedCell = usesH3Aggregation
-    ? resolveDisplayedCellId(state.selectedCell, h3Resolution)
-    : state.selectedCell;
+  const effectiveCells = isGridMode ? getGridDisplayCells(gridDegrees) : getH3DisplayCells(h3Resolution);
   const overlayState = {
     ...state,
     densityLevel,
-    displayedSelectedCell,
-    displayedH3Resolution: usesH3Aggregation ? h3Resolution : null
+    displayedSelectedCell: state.selectedCell,
+    displayedH3Resolution: isGridMode ? null : h3Resolution,
+    displayedGridDegrees: isGridMode ? gridDegrees : null
   };
-  const valueDomains = getCommittedValueDomains(effectiveCells, metadata, overlayState);
+  // "Global" color scales span every 2-degree sample so they don't shift with the zoom level.
+  const valueDomains = getCommittedValueDomains(rawCells, metadata, overlayState);
   const renderableCells = buildRenderableCells(effectiveCells, metadata, overlayState, valueDomains);
   return {
     ...overlayState,
     renderableCells,
-    valueDomains
+    valueDomains,
+    viewportDomains: viewportDomains ?? valueDomains
   };
 }
 
@@ -603,87 +501,6 @@ function angularDistance(a, b) {
 }
 
 
-function getCellBoundary(h3Index) {
-  if (!H3_BOUNDARY_CACHE.has(h3Index)) {
-    H3_BOUNDARY_CACHE.set(h3Index, cellToBoundary(h3Index));
-  }
-  return H3_BOUNDARY_CACHE.get(h3Index);
-}
-
-function getCellCenter(h3Index) {
-  if (!H3_CENTER_CACHE.has(h3Index)) {
-    const [lat, lon] = cellToLatLng(h3Index);
-    H3_CENTER_CACHE.set(h3Index, { lat, lon });
-  }
-  return H3_CENTER_CACHE.get(h3Index);
-}
-
-function isPointInViewport(map, lat, lon, centerAnchor, viewportWidth, viewportHeight) {
-  if (angularDistance({ lat, lon }, centerAnchor) >= Math.PI / 2 - 0.02) {
-    return false;
-  }
-  const projected = map.project([lon, lat]);
-  return (
-    projected.x >= 0 &&
-    projected.x <= viewportWidth &&
-    projected.y >= 0 &&
-    projected.y <= viewportHeight
-  );
-}
-
-function isCellFullyVisible(map, h3Index, centerAnchor, viewportWidth, viewportHeight) {
-  for (const [lat, lon] of getCellBoundary(h3Index)) {
-    if (!isPointInViewport(map, lat, lon, centerAnchor, viewportWidth, viewportHeight)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function buildVisibleCenterDotFeatureCollection(map, resolution) {
-  if (!Number.isInteger(resolution)) {
-    return {
-      type: 'FeatureCollection',
-      features: []
-    };
-  }
-  const viewportWidth = map.getContainer().clientWidth;
-  const viewportHeight = map.getContainer().clientHeight;
-  const center = map.getCenter();
-  const centerAnchor = { lat: center.lat, lon: center.lng };
-  const source = map.getSource(H3_SOURCE_ID);
-  const sourceFeatures = source?._data?.features ?? [];
-  const features = [];
-
-  for (const feature of sourceFeatures) {
-    const h3Index = feature.properties?.id ?? feature.id;
-    if (!h3Index) {
-      continue;
-    }
-    if (!isCellFullyVisible(map, h3Index, centerAnchor, viewportWidth, viewportHeight)) {
-      continue;
-    }
-    const anchor = getCellCenter(h3Index);
-
-    features.push({
-      type: 'Feature',
-      id: h3Index,
-      properties: {
-        id: h3Index
-      },
-      geometry: {
-        type: 'Point',
-        coordinates: [anchor.lon, anchor.lat]
-      }
-    });
-  }
-
-  return {
-    type: 'FeatureCollection',
-    features
-  };
-}
-
 function getProjectedCellMetrics(map, resolution) {
   const center = map.getCenter();
   const h3Index = latLngToCell(center.lat, center.lng, resolution);
@@ -712,27 +529,7 @@ function getProjectedCellMetrics(map, resolution) {
   };
 }
 
-function getRequiredCellMetrics(state, densityLevel) {
-  const { width, height } = sizeForAdaptiveResolution(densityLevel);
-  return {
-    minWidth: width * 1.02,
-    minHeight: height * 1.02,
-    minEdge: Math.max(8, width * 0.18, height * 0.14)
-  };
-}
-
-function canUseResolution(map, resolution, state, densityLevel, factor = 1) {
-  const metrics = getProjectedCellMetrics(map, resolution);
-  const required = getRequiredCellMetrics(state, densityLevel);
-
-  return (
-    metrics.bboxWidth >= required.minWidth * factor &&
-    metrics.bboxHeight >= required.minHeight * factor &&
-    metrics.minEdge >= required.minEdge * factor
-  );
-}
-
-function getAdaptiveH3Resolution(map, metadata, state, densityLevel, currentResolution) {
+function getAdaptiveH3Resolution(map, metadata, densityLevel) {
   if (!Number.isInteger(metadata.h3Resolution)) {
     return null;
   }
@@ -747,6 +544,56 @@ function getAdaptiveH3Resolution(map, metadata, state, densityLevel, currentReso
     }
   }
   return maxResolution;
+}
+
+function getProjectedGridCellMetrics(map, degrees) {
+  const center = map.getCenter();
+  const { latIndex, lonIndex } = getGridIndexes(center.lat, center.lng, degrees);
+  const south = -90 + latIndex * degrees;
+  const north = Math.min(90, south + degrees);
+  const west = -180 + lonIndex * degrees;
+  const east = Math.min(180, west + degrees);
+  const projected = [
+    map.project([west, south]),
+    map.project([east, south]),
+    map.project([east, north]),
+    map.project([west, north])
+  ];
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minEdge = Infinity;
+
+  for (let index = 0; index < projected.length; index += 1) {
+    const point = projected[index];
+    const next = projected[(index + 1) % projected.length];
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+    minEdge = Math.min(minEdge, distance(point, next));
+  }
+
+  return {
+    bboxWidth: maxX - minX,
+    bboxHeight: maxY - minY,
+    minEdge
+  };
+}
+
+function getAdaptiveGridDegrees(map, densityLevel) {
+  const { width: glyphWidth, height: glyphHeight } = sizeForAdaptiveResolution(densityLevel);
+  const glyphSize = Math.max(glyphWidth, glyphHeight);
+
+  for (const degrees of GRID_DEGREE_LEVELS) {
+    const { bboxWidth, bboxHeight } = getProjectedGridCellMetrics(map, degrees);
+    if (Math.min(bboxWidth, bboxHeight) <= 2 * glyphSize) {
+      return degrees;
+    }
+  }
+
+  return GRID_DEGREE_LEVELS[GRID_DEGREE_LEVELS.length - 1];
 }
 
 function toGeoJsonRing(boundary) {
@@ -772,243 +619,76 @@ function toGeoJsonRing(boundary) {
   return ring;
 }
 
-function buildH3FeatureCollection(cells, resolution, baseResolution) {
-  const displayCells = aggregateCellsToH3Resolution(cells, resolution, baseResolution);
-  const sourceIdByH3Index = new Map(displayCells.map((cell) => [cell.id, cell.sourceId ?? cell.id]));
-  const h3Indexes = buildGlobalH3Indexes(resolution);
-
-  return {
-    type: 'FeatureCollection',
-    features: h3Indexes.map((h3Index) => ({
-      type: 'Feature',
-      id: h3Index,
-      properties: {
-        id: h3Index,
-        h3Index,
-        sourceId: sourceIdByH3Index.get(h3Index) ?? null
-      },
-      geometry: {
-        type: 'Polygon',
-        coordinates: [toGeoJsonRing(cellToBoundary(h3Index))]
-      }
-    }))
-  };
-}
-
-function getCachedH3FeatureCollection(cells, resolution, baseResolution) {
-  const cacheKey = `${resolution}|${baseResolution}|${cells.length}`;
-  if (!H3_FEATURE_COLLECTION_CACHE.has(cacheKey)) {
-    H3_FEATURE_COLLECTION_CACHE.set(cacheKey, buildH3FeatureCollection(cells, resolution, baseResolution));
-  }
-  return H3_FEATURE_COLLECTION_CACHE.get(cacheKey);
-}
-
-function getH3FeatureCollectionForResolution(cells, metadata, resolution) {
-  return Number.isInteger(resolution)
-    ? getCachedH3FeatureCollection(cells, resolution, metadata.h3Resolution)
-    : {
-        type: 'FeatureCollection',
-        features: []
-      };
-}
-
-function coordinateValueKey(value) {
-  return Number(value).toFixed(6);
-}
-
-function buildGridLayout(cells) {
-  if (!Array.isArray(cells) || cells.length === 0) {
-    return {
-      latEdges: [],
-      lonEdges: [],
-      cellBoundsById: new Map(),
-      cellIdByCoordinate: new Map()
-    };
-  }
-
-  const latitudes = [...new Set(cells.map((cell) => cell.lat).filter(Number.isFinite))]
-    .sort((a, b) => a - b);
-  const longitudes = [...new Set(cells.map((cell) => cell.lon).filter(Number.isFinite))]
-    .sort((a, b) => a - b);
-
-  const latEdges = latitudes.map((lat, index) => {
-    if (index === 0) {
-      return -90;
-    }
-    return (latitudes[index - 1] + lat) / 2;
-  });
-  latEdges.push(90);
-
-  const lonEdges = longitudes.map((lon, index) => {
-    if (index === 0) {
-      const previousWrappedLon = longitudes[longitudes.length - 1] - 360;
-      return (previousWrappedLon + lon) / 2;
-    }
-    return (longitudes[index - 1] + lon) / 2;
-  });
-  lonEdges.push(lonEdges[0] + 360);
-
-  const latIndexByValue = new Map(latitudes.map((lat, index) => [coordinateValueKey(lat), index]));
-  const lonIndexByValue = new Map(longitudes.map((lon, index) => [coordinateValueKey(lon), index]));
-  const cellBoundsById = new Map();
-  const cellIdByCoordinate = new Map();
-
-  for (const cell of cells) {
-    const latIndex = latIndexByValue.get(coordinateValueKey(cell.lat));
-    const lonIndex = lonIndexByValue.get(coordinateValueKey(cell.lon));
-    if (latIndex == null || lonIndex == null) {
-      continue;
-    }
-
-    cellBoundsById.set(cell.id, {
-      south: latEdges[latIndex],
-      north: latEdges[latIndex + 1],
-      west: lonEdges[lonIndex],
-      east: lonEdges[lonIndex + 1],
-      latIndex,
-      lonIndex
-    });
-    cellIdByCoordinate.set(`${latIndex}|${lonIndex}`, cell.id);
-  }
-
-  return {
-    latEdges,
-    lonEdges,
-    cellBoundsById,
-    cellIdByCoordinate
-  };
-}
-
-function getCachedGridLayout(cells, cacheKey = 'rawGrid') {
-  const key = `${cacheKey}|${Array.isArray(cells) ? cells.length : 0}`;
-  if (!GRID_LAYOUT_CACHE.has(key)) {
-    GRID_LAYOUT_CACHE.set(key, buildGridLayout(cells));
-  }
-  return GRID_LAYOUT_CACHE.get(key);
-}
-
-function normalizeLongitudeForRing(lon, previousLon) {
-  let adjustedLon = lon;
-  while (adjustedLon - previousLon > 180) {
-    adjustedLon -= 360;
-  }
-  while (adjustedLon - previousLon < -180) {
-    adjustedLon += 360;
-  }
-  return adjustedLon;
-}
-
-function toGeoJsonGridRingFromBounds(bounds) {
-  const ring = [
-    [bounds.west, bounds.south],
-    [bounds.east, bounds.south],
-    [bounds.east, bounds.north],
-    [bounds.west, bounds.north]
-  ];
-
-  const adjustedRing = [];
-  for (let index = 0; index < ring.length; index += 1) {
-    const [cornerLon, cornerLat] = ring[index];
-    const previousLon = adjustedRing[index - 1]?.[0] ?? cornerLon;
-    adjustedRing.push([index === 0 ? cornerLon : normalizeLongitudeForRing(cornerLon, previousLon), cornerLat]);
-  }
-
-  adjustedRing.push([...adjustedRing[0]]);
-  return adjustedRing;
-}
-
-function buildGridFeatureCollection(cells, metadata, resolution = 'rawGrid') {
-  const layout = getCachedGridLayout(cells, resolution);
-
-  return {
-    type: 'FeatureCollection',
-    features: cells
-      .map((cell) => {
-        const bounds = layout.cellBoundsById.get(cell.id);
-        if (!bounds) {
-          return null;
-        }
-
-        return {
-          type: 'Feature',
-          id: cell.id,
-          properties: {
-            id: cell.id
-          },
-          geometry: {
-            type: 'Polygon',
-            coordinates: [toGeoJsonGridRingFromBounds(bounds)]
-          }
-        };
-      })
-      .filter(Boolean)
-  };
-}
-
-function roundedCoordinateKey(value) {
-  return value.toFixed(6);
-}
-
-function coordinateKey(coordinate) {
-  return `${roundedCoordinateKey(coordinate[0])},${roundedCoordinateKey(coordinate[1])}`;
-}
-
-function edgeKey(start, end) {
-  const startKey = coordinateKey(start);
-  const endKey = coordinateKey(end);
-  return startKey < endKey ? `${startKey}|${endKey}` : `${endKey}|${startKey}`;
-}
-
-function buildGridLineFeatureCollection(cells, metadata, resolution = 'rawGrid') {
-  if (!Array.isArray(cells) || cells.length === 0) {
-    return {
+function getH3FeatureCollection(resolution) {
+  if (!H3_FEATURE_COLLECTION_CACHE.has(resolution)) {
+    const indexes = resolution === 0
+      ? getRes0Cells()
+      : getRes0Cells().flatMap((cell) => cellToChildren(cell, resolution));
+    H3_FEATURE_COLLECTION_CACHE.set(resolution, {
       type: 'FeatureCollection',
-      features: []
-    };
+      features: indexes.map((h3Index) => ({
+        type: 'Feature',
+        id: h3Index,
+        properties: { id: h3Index },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [toGeoJsonRing(cellToBoundary(h3Index))]
+        }
+      }))
+    });
   }
+  return H3_FEATURE_COLLECTION_CACHE.get(resolution);
+}
 
-  const layout = getCachedGridLayout(cells, resolution);
-  const edgeMap = new Map();
+function toGeoJsonGridRing({ south, north, west, east }) {
+  return [
+    [west, south],
+    [east, south],
+    [east, north],
+    [west, north],
+    [west, south]
+  ];
+}
 
-  cells.forEach((cell) => {
-    const bounds = layout.cellBoundsById.get(cell.id);
-    if (!bounds) {
-      return;
-    }
-    const ring = toGeoJsonGridRingFromBounds(bounds);
-    for (let index = 0; index < ring.length - 1; index += 1) {
-      const start = ring[index];
-      const end = ring[index + 1];
-      edgeMap.set(edgeKey(start, end), [start, end]);
-    }
-  });
+function getGridFeatureCollection(degrees) {
+  if (!GRID_FEATURE_COLLECTION_CACHE.has(degrees)) {
+    GRID_FEATURE_COLLECTION_CACHE.set(degrees, {
+      type: 'FeatureCollection',
+      features: getGridDisplayCells(degrees).map((cell) => ({
+        type: 'Feature',
+        id: cell.id,
+        properties: { id: cell.id },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [toGeoJsonGridRing(cell.gridBounds)]
+        }
+      }))
+    });
+  }
+  return GRID_FEATURE_COLLECTION_CACHE.get(degrees);
+}
 
-  return {
-    type: 'FeatureCollection',
-    features: [...edgeMap.values()].map((coordinates, index) => ({
-      type: 'Feature',
-      id: `grid-edge-${index}`,
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates
+function getGridLineFeatureCollection(degrees) {
+  if (!GRID_LINE_FEATURE_COLLECTION_CACHE.has(degrees)) {
+    const step = Math.min(degrees, 5);
+    const features = [];
+    for (let lat = -90 + degrees; lat < 90; lat += degrees) {
+      const coordinates = [];
+      for (let lon = -180; lon <= 180; lon += step) {
+        coordinates.push([lon, lat]);
       }
-    }))
-  };
-}
-
-function getCachedGridFeatureCollection(cells, metadata, resolution) {
-  if (!GRID_FEATURE_COLLECTION_CACHE.has(resolution)) {
-    GRID_FEATURE_COLLECTION_CACHE.set(resolution, buildGridFeatureCollection(cells, metadata, resolution));
+      features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } });
+    }
+    for (let lon = -180; lon < 180; lon += degrees) {
+      const coordinates = [];
+      for (let lat = -90; lat <= 90; lat += step) {
+        coordinates.push([lon, lat]);
+      }
+      features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } });
+    }
+    GRID_LINE_FEATURE_COLLECTION_CACHE.set(degrees, { type: 'FeatureCollection', features });
   }
-  return GRID_FEATURE_COLLECTION_CACHE.get(resolution);
-}
-
-function getCachedGridLineFeatureCollection(cells, metadata, resolution) {
-  if (!GRID_LINE_FEATURE_COLLECTION_CACHE.has(resolution)) {
-    GRID_LINE_FEATURE_COLLECTION_CACHE.set(resolution, buildGridLineFeatureCollection(cells, metadata, resolution));
-  }
-  return GRID_LINE_FEATURE_COLLECTION_CACHE.get(resolution);
+  return GRID_LINE_FEATURE_COLLECTION_CACHE.get(degrees);
 }
 
 function syncSelectedMapCell(map, selectedCell) {
@@ -1061,8 +741,8 @@ function setUnitLayerVisibility(map, unit) {
   }
 }
 
-function addGeometryLayers(map, resolution, metadata, cells, rawCells) {
-  const sourceData = getH3FeatureCollectionForResolution(cells, metadata, resolution);
+function addGeometryLayers(map, resolution, gridDegrees) {
+  const sourceData = getH3FeatureCollection(resolution);
 
   map.addSource(H3_SOURCE_ID, {
     type: 'geojson',
@@ -1210,12 +890,12 @@ function addGeometryLayers(map, resolution, metadata, cells, rawCells) {
 
   map.addSource(GRID_SOURCE_ID, {
     type: 'geojson',
-    data: getCachedGridFeatureCollection(rawCells, metadata, 'rawGrid')
+    data: getGridFeatureCollection(gridDegrees)
   });
 
   map.addSource(GRID_LINE_SOURCE_ID, {
     type: 'geojson',
-    data: getCachedGridLineFeatureCollection(rawCells, metadata, 'rawGrid')
+    data: getGridLineFeatureCollection(gridDegrees)
   });
 
   map.addLayer({
@@ -1350,87 +1030,27 @@ function addGeometryLayers(map, resolution, metadata, cells, rawCells) {
       'line-opacity': 0.98
     }
   });
-
-  map.addSource(H3_CENTER_DOT_SOURCE_ID, {
-    type: 'geojson',
-    data: {
-      type: 'FeatureCollection',
-      features: []
-    }
-  });
-
-  map.addLayer({
-    id: H3_CENTER_DOT_LAYER_ID,
-    type: 'circle',
-    source: H3_CENTER_DOT_SOURCE_ID,
-    layout: {
-      visibility: GLYPHS_ENABLED ? 'none' : 'visible'
-    },
-    paint: {
-      'circle-color': '#ffffff',
-      'circle-radius': [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        2.44,
-        1.1,
-        4,
-        1.35,
-        6,
-        1.7
-      ],
-      'circle-opacity': 0.96
-    }
-  });
 }
 
-function updateGeometrySources(map, cells, rawCells, metadata, resolution) {
-  const h3FeatureCollection = getH3FeatureCollectionForResolution(cells, metadata, resolution);
-  const h3Source = map.getSource(H3_SOURCE_ID);
-  if (h3Source) {
-    h3Source.setData(h3FeatureCollection);
+function updateGeometrySources(map, h3Resolution, gridDegrees, unit) {
+  if (unit === 'grid') {
+    map.getSource(GRID_SOURCE_ID)?.setData(getGridFeatureCollection(gridDegrees));
+    map.getSource(GRID_LINE_SOURCE_ID)?.setData(getGridLineFeatureCollection(gridDegrees));
+  } else {
+    map.getSource(H3_SOURCE_ID)?.setData(getH3FeatureCollection(h3Resolution));
   }
-
-  const gridSource = map.getSource(GRID_SOURCE_ID);
-  if (gridSource) {
-    gridSource.setData(getCachedGridFeatureCollection(rawCells, metadata, 'rawGrid'));
-  }
-
-  const gridLineSource = map.getSource(GRID_LINE_SOURCE_ID);
-  if (gridLineSource) {
-    gridLineSource.setData(getCachedGridLineFeatureCollection(rawCells, metadata, 'rawGrid'));
-  }
-
-  map.triggerRepaint();
-  return h3FeatureCollection;
 }
 
-function updateVisibleCenterDots(map, resolution, onUpdated) {
-  const source = map.getSource(H3_CENTER_DOT_SOURCE_ID);
-  if (!source) {
-    return;
-  }
-  const featureCollection = buildVisibleCenterDotFeatureCollection(map, resolution);
-  source.setData(featureCollection);
-  if (typeof onUpdated === 'function') {
-    onUpdated(featureCollection.features);
-  }
-  map.triggerRepaint();
-}
-
-export async function createMapView({ container, metadata, cells, rawCells, store, onLoadingChange = () => {} }) {
+export async function createMapView({ container, metadata, rawCells, store, onLoadingChange = () => {} }) {
   const initialView = {
     center: [-1.53, 47.22],
     zoom: 2.44
   };
   const mapStage = container.parentElement;
-  const debugLabel = container.parentElement?.querySelector('[data-map-debug]');
   const searchForm = mapStage?.querySelector('[data-map-search-form]');
   const searchInput = mapStage?.querySelector('[data-map-search-input]');
   const searchStatus = mapStage?.querySelector('[data-map-search-status]');
   const searchSubmit = searchForm?.querySelector('[type="submit"]');
-  let latestCenterDotFeatures = [];
-  let latestGlyphCount = 0;
   let activeSearchSelection = null;
   const searchPinElement = document.createElement('div');
   searchPinElement.className = 'map-search-pin';
@@ -1450,7 +1070,7 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
     zoom: initialView.zoom,
     minZoom: initialView.zoom,
     maxZoom: 6.2,
-    preserveDrawingBuffer: true,
+    canvasContextAttributes: { preserveDrawingBuffer: true },
     maxPitch: 0,
     dragRotate: false,
     touchPitch: false,
@@ -1462,6 +1082,7 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
   map.touchZoomRotate.disableRotation();
   map.doubleClickZoom.enable();
   map.scrollZoom.enable();
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
   function setSearchStatus(message = '', isError = false) {
     if (!searchStatus) {
@@ -1498,98 +1119,13 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
     return preferred.length > 48 ? `${preferred.slice(0, 45).trimEnd()}...` : preferred;
   }
 
-  function findNearestRawCellId(lat, lon) {
-    let bestCell = rawCells[0] ?? null;
-    let bestDistance = Infinity;
-    for (const cell of rawCells) {
-      const distanceToCell = (cell.lat - lat) ** 2 + (cell.lon - lon) ** 2;
-      if (distanceToCell < bestDistance) {
-        bestDistance = distanceToCell;
-        bestCell = cell;
-      }
-    }
-    return bestCell?.id ?? null;
-  }
-
-  function findGridEdgeIndex(edges, value) {
-    if (!Array.isArray(edges) || edges.length < 2 || !Number.isFinite(value)) {
-      return -1;
-    }
-
-    if (value <= edges[0]) {
-      return 0;
-    }
-    if (value >= edges[edges.length - 1]) {
-      return edges.length - 2;
-    }
-
-    let low = 0;
-    let high = edges.length - 2;
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      if (value < edges[mid]) {
-        high = mid - 1;
-      } else if (value >= edges[mid + 1]) {
-        low = mid + 1;
-      } else {
-        return mid;
-      }
-    }
-
-    return -1;
-  }
-
-  function normalizeGridLongitude(lon, lonEdges) {
-    if (!Number.isFinite(lon) || !Array.isArray(lonEdges) || lonEdges.length < 2) {
-      return lon;
-    }
-
-    let normalized = lon;
-    const minLon = lonEdges[0];
-    const maxLon = lonEdges[lonEdges.length - 1];
-    while (normalized < minLon) {
-      normalized += 360;
-    }
-    while (normalized >= maxLon) {
-      normalized -= 360;
-    }
-    return normalized;
-  }
-
-  function findGridCellIdAt(lat, lon) {
-    const layout = getCachedGridLayout(rawCells, 'rawGrid');
-    const latIndex = findGridEdgeIndex(layout.latEdges, clamp(lat, -90, 90));
-    const lonIndex = findGridEdgeIndex(layout.lonEdges, normalizeGridLongitude(lon, layout.lonEdges));
-    return layout.cellIdByCoordinate.get(`${latIndex}|${lonIndex}`) ?? null;
-  }
-
-  function findNearestRenderableCellId(lat, lon) {
-    let bestCell = cells[0] ?? null;
-    let bestDistance = Infinity;
-    for (const cell of cells) {
-      const distanceToCell = (cell.lat - lat) ** 2 + (cell.lon - lon) ** 2;
-      if (distanceToCell < bestDistance) {
-        bestDistance = distanceToCell;
-        bestCell = cell;
-      }
-    }
-    return bestCell?.id ?? null;
-  }
-
-  function resolveSearchSelectionCellId(lat, lon, state) {
-    if (state?.unit === 'grid') {
-      return findNearestRawCellId(lat, lon);
-    }
-
-    return findNearestRenderableCellId(lat, lon);
-  }
-
   function focusSearchResult(result) {
     const lon = Number(result.lon);
     const lat = Number(result.lat);
     const bounds = Array.isArray(result.boundingbox) ? result.boundingbox.map(Number) : [];
     const [south, north, west, east] = bounds;
     const hasBounds = bounds.length === 4 && bounds.every((value) => Number.isFinite(value));
+    const maxZoom = map.getMaxZoom();
 
     if (hasBounds) {
       map.fitBounds(
@@ -1599,7 +1135,7 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
         ],
         {
           padding: 64,
-          maxZoom: 10.5,
+          maxZoom,
           duration: 900
         }
       );
@@ -1609,7 +1145,7 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
     if (Number.isFinite(lon) && Number.isFinite(lat)) {
       map.easeTo({
         center: [lon, lat],
-        zoom: 8.8,
+        zoom: maxZoom,
         duration: 900
       });
     }
@@ -1638,11 +1174,14 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
       const params = new URLSearchParams({
         q: query,
         format: 'jsonv2',
-        limit: '5'
+        limit: '1',
+        'accept-language': 'en'
       });
-      const response = await fetch(`${NOMINATIM_SEARCH_URL}?${params.toString()}`);
+      const response = await fetch(`${NOMINATIM_SEARCH_URL}?${params.toString()}`, {
+        signal: AbortSignal.timeout?.(15000)
+      });
       if (!response.ok) {
-        throw new Error(`Search failed with ${response.status}`);
+        throw new Error(`Search failed (HTTP ${response.status}). Please try again in a moment.`);
       }
 
       const results = await response.json();
@@ -1657,25 +1196,28 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
       const topResult = results[0];
       const lon = Number(topResult.lon);
       const lat = Number(topResult.lat);
-      focusSearchResult(topResult);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+        setSearchStatus(`No place found for "${query}".`, true);
+        return;
+      }
       setSearchStatus(topResult.display_name ?? query);
 
-      const selectedCellId = resolveSearchSelectionCellId(lat, lon, currentAppState);
-      if (selectedCellId && Number.isFinite(lon) && Number.isFinite(lat)) {
-        activeSearchSelection = {
-          cellId: selectedCellId,
-          lon,
-          lat,
-          unit: currentAppState.unit ?? 'hexagon',
-          label: buildSearchResultLabel(topResult, query)
-        };
-        showSearchSelectionMarker(lon, lat, activeSearchSelection.label);
-        store.selectCell(selectedCellId);
-      }
+      const selectedCellId = displayedCellIdAt(lat, lon);
+      activeSearchSelection = {
+        cellId: selectedCellId,
+        label: buildSearchResultLabel(topResult, query)
+      };
+      showSearchSelectionMarker(lon, lat, activeSearchSelection.label);
+      store.selectCell(selectedCellId, { lat, lon });
+      focusSearchResult(topResult);
     } catch (error) {
-      setSearchStatus(error.message ?? 'Search failed.', true);
+      if (searchToken !== activeSearchToken) {
+        return;
+      }
+      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+      setSearchStatus(timedOut ? 'Search timed out. Please try again.' : error.message || 'Search failed.', true);
     } finally {
-      if (searchSubmit) {
+      if (searchSubmit && searchToken === activeSearchToken) {
         searchSubmit.disabled = false;
       }
     }
@@ -1724,9 +1266,7 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
           this._map.zoomOut({ duration: 280 });
         } else if (action === 'reset') {
           this._map.easeTo({
-            center: initialView.center,
             zoom: initialView.zoom,
-            bearing: 0,
             duration: 520
           });
         }
@@ -1743,40 +1283,32 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
 
   map.addControl(new GlobeControls(), 'top-right');
 
-  const glyphOverlay = GLYPHS_ENABLED
-    ? createGlyphOverlay({
-        map,
-        host: container,
-        h3SourceId: H3_SOURCE_ID,
-        getH3SourceFeatures: () => currentH3FeatureCollection.features,
-        metadata,
-        cells,
-        rawCells,
-        store,
-        getVisibleCenterDotFeatures: () => latestCenterDotFeatures,
-        onGlyphCountChange: (glyphCount) => {
-          latestGlyphCount = glyphCount;
-          updateDebugLabel();
-        },
-        onSelectCell: (cellId) => focusSelectedCell(cellId)
-      })
-    : {
-        renderContent() {},
-        updateLayout() {},
-        setInteractionPhase() {}
-      };
+  let latestVisibleCellIds = new Set();
+  const glyphOverlay = createGlyphOverlay({
+    map,
+    host: container,
+    metadata,
+    store,
+    onVisibleCellsChange: (visibleIds) => {
+      latestVisibleCellIds = visibleIds;
+    },
+    onSelectCell: (cellId) => {
+      const cell = getDisplayCell(cellId);
+      store.selectCell(cellId, cell && Number.isFinite(cell.lat) ? { lat: cell.lat, lon: cell.lon } : null);
+    }
+  });
 
-  const usesH3Aggregation = Number.isInteger(metadata.h3Resolution);
   let currentAppState = store.getState();
   let currentDensityLevel = getDensityLevelForZoom(initialView.zoom);
   let liveDensityLevel = currentDensityLevel;
   let interactionPhase = 'idle';
   let currentUnit = currentAppState.unit ?? 'hexagon';
-  let committedOverlayState = GLYPHS_ENABLED
-    ? buildOverlayState(cells, rawCells, metadata, currentAppState, currentDensityLevel, usesH3Aggregation ? metadata.h3Resolution : null)
-    : null;
+  let currentGridDegrees = GRID_DEFAULT_DEGREES;
+  let currentH3Resolution = H3_MIN_RESOLUTION;
+  let currentViewportDomains = null;
+  let committedOverlayState = null;
   let layoutFrame = null;
-  let scheduledState = committedOverlayState;
+  let scheduledState = null;
   let scheduledPhase = 'idle';
   let scheduledDensityLevel = currentDensityLevel;
   let settleTimer = null;
@@ -1784,12 +1316,65 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
   let pendingContentRefresh = null;
   let loadingSequence = 0;
   let loadingFallbackTimer = null;
-  let currentH3Resolution = usesH3Aggregation ? H3_MIN_RESOLUTION : null;
-  let centerDotFrame = null;
   let pointerMoveFrame = null;
   let lastPointerEvent = null;
-  let currentDisplayedCellSourceMap = new Map(cells.map((cell) => [cell.id, cell.sourceId ?? cell.id]));
-  let currentH3FeatureCollection = getH3FeatureCollectionForResolution(cells, metadata, currentH3Resolution);
+  let displayedGeometryKey = null;
+
+  function usesViewportScale(state = currentAppState) {
+    return state.colorScaleMode === 'viewport' || state.chartValueScaleMode === 'viewport';
+  }
+
+  function displayedCellIdAt(lat, lon, unit = currentUnit) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return null;
+    }
+    return unit === 'grid' ? getGridCellIdAt(lat, lon, currentGridDegrees) : latLngToCell(lat, lon, currentH3Resolution);
+  }
+
+  function computeViewportDomains() {
+    if (!usesViewportScale() || !latestVisibleCellIds.size) {
+      return null;
+    }
+    const visibleCells = [...latestVisibleCellIds].map((id) => getDisplayCell(id)).filter(Boolean);
+    if (!visibleCells.length) {
+      return null;
+    }
+    return getCommittedValueDomains(visibleCells, metadata, {
+      ...currentAppState,
+      displayedH3Resolution: currentUnit === 'grid' ? null : currentH3Resolution,
+      displayedGridDegrees: currentUnit === 'grid' ? currentGridDegrees : null
+    }, { cache: false });
+  }
+
+  function domainsEqual(a, b) {
+    if (!a || !b) {
+      return a === b;
+    }
+    return ['temperature', 'precipitation'].every(
+      (key) => Math.abs(a[key][0] - b[key][0]) < 1e-3 && Math.abs(a[key][1] - b[key][1]) < 1e-3
+    );
+  }
+
+  function refreshViewportDomains() {
+    const next = computeViewportDomains();
+    if (!domainsEqual(next, currentViewportDomains)) {
+      currentViewportDomains = next;
+      store.setViewportDomains(next);
+    }
+  }
+
+  function rebuildOverlayState() {
+    committedOverlayState = buildOverlayState(
+      rawCells,
+      metadata,
+      currentAppState,
+      currentDensityLevel,
+      currentH3Resolution,
+      currentGridDegrees,
+      currentAppState.colorScaleMode === 'viewport' ? currentViewportDomains : null
+    );
+    return committedOverlayState;
+  }
 
   function clearLoadingFallbackTimer() {
     if (loadingFallbackTimer) {
@@ -1801,18 +1386,12 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
   function shouldShowRenderLoading(changedKey) {
     return (
       changedKey === 'init' ||
-      changedKey === 'mode' ||
       changedKey === 'symbol' ||
-      changedKey === 'unit' ||
       changedKey === 'variable' ||
       changedKey === 'colorScaleMode' ||
       changedKey === 'ranges' ||
       changedKey === 'periodMonths'
     );
-  }
-
-  function getRenderLoadingCopy(changedKey) {
-    return RENDER_LOADING_COPY[changedKey] ?? RENDER_LOADING_COPY.default;
   }
 
   function beginRenderLoading(changedKey) {
@@ -1824,7 +1403,7 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
     const sequence = ++loadingSequence;
     onLoadingChange({
       active: true,
-      ...getRenderLoadingCopy(changedKey)
+      ...(RENDER_LOADING_COPY[changedKey] ?? RENDER_LOADING_COPY.default)
     });
     return sequence;
   }
@@ -1868,36 +1447,21 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
       return;
     }
 
-    applyDisplayedGeometryResolution(pending.resolution, pending.state, pending.densityLevel);
+    applyDisplayedGeometry();
     finishRenderLoading(pending.loadingSequence);
   }
 
-  function scheduleContentRefresh(state, changedKey) {
+  function scheduleContentRefresh(changedKey) {
     cancelSettlingRefresh();
     currentDensityLevel = liveDensityLevel;
+    const loadingSequenceForChange = beginRenderLoading(changedKey);
     pendingContentRefresh = {
-      state,
-      changedKey,
-      densityLevel: currentDensityLevel,
-      resolution: currentH3Resolution,
-      loadingSequence: beginRenderLoading(changedKey)
+      loadingSequence: loadingSequenceForChange || pendingContentRefresh?.loadingSequence || 0
     };
     if (contentRefreshFrame) {
       cancelAnimationFrame(contentRefreshFrame);
     }
     contentRefreshFrame = requestAnimationFrame(flushScheduledContentRefresh);
-  }
-
-  function resolveDisplayedHoverCellId(cellId, unit = currentUnit) {
-    if (!cellId) {
-      return null;
-    }
-
-    return unit === 'grid' ? cellId : resolveDisplayedCellId(cellId, currentH3Resolution);
-  }
-
-  function updateHoveredGeometryFromState(state = currentAppState) {
-    syncHoveredMapCell(map, resolveDisplayedHoverCellId(state.hoveredCell, state.unit ?? currentUnit));
   }
 
   function clearMapHover(event) {
@@ -1911,82 +1475,34 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
     if (currentStoreState.hoveredCell || currentStoreState.hoveredPosition) {
       store.setHoveredCell(null, null);
     }
-    updateHoveredGeometryFromState({
-      ...currentAppState,
-      hoveredCell: null
-    });
   }
 
-  function resolveInteractiveFeatureCellId(featureId, unit = currentUnit) {
-    if (!featureId) {
-      return null;
-    }
-
-    if (unit === 'grid') {
-      return featureId;
-    }
-
-    return currentDisplayedCellSourceMap.get(featureId) ?? null;
-  }
-
-  function isPointerOnFrontHemisphere(event) {
+  function isPointerOnFrontHemisphere(lngLat) {
     const center = map.getCenter();
-    const lngLat = event.lngLat ?? map.unproject(event.point);
     return angularDistance(
       { lat: lngLat.lat, lon: lngLat.lng },
       { lat: center.lat, lon: center.lng }
     ) < Math.PI / 2 - 0.015;
   }
 
-  function resolvePointerCellId(event, { allowNearestGrid = false } = {}) {
-    if (!event?.point || !isPointerOnFrontHemisphere(event)) {
+  function resolvePointerLngLat(event) {
+    if (!event?.point) {
       return null;
     }
-
     const lngLat = event.lngLat ?? map.unproject(event.point);
-    if (!Number.isFinite(lngLat.lat) || !Number.isFinite(lngLat.lng)) {
+    if (!Number.isFinite(lngLat?.lat) || !Number.isFinite(lngLat?.lng) || !isPointerOnFrontHemisphere(lngLat)) {
       return null;
     }
-
-    if (currentUnit === 'grid') {
-      return findGridCellIdAt(lngLat.lat, lngLat.lng) ?? (allowNearestGrid ? findNearestRawCellId(lngLat.lat, lngLat.lng) : null);
-    }
-
-    if (!Number.isInteger(currentH3Resolution)) {
-      return null;
-    }
-
-    const displayedCellId = latLngToCell(lngLat.lat, lngLat.lng, currentH3Resolution);
-    return currentDisplayedCellSourceMap.get(displayedCellId) ?? null;
+    return lngLat;
   }
 
-  function getSelectedCellCenter(cellId) {
-    if (!cellId) {
-      return null;
-    }
-
-    if (isValidCell(cellId)) {
-      const [lat, lon] = cellToLatLng(cellId);
-      return { lat, lon };
-    }
-
-    const found = rawCells.find((cell) => cell.id === cellId) ?? cells.find((cell) => cell.id === cellId);
-    if (!found) {
-      return null;
-    }
-
-    const center = found.h3Center ?? found;
-    return { lat: center.lat, lon: center.lon };
-  }
-
-  function focusSelectedCell(cellId) {
-    const center = getSelectedCellCenter(cellId);
-    if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lon)) {
+  function focusSelection(state) {
+    const anchor = state.selectedAnchor ?? getDisplayCell(state.selectedCell);
+    if (!anchor || !Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lon)) {
       return;
     }
-
     map.easeTo({
-      center: [center.lon, center.lat],
+      center: [anchor.lon, anchor.lat],
       duration: 620
     });
   }
@@ -1996,8 +1512,9 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
       return;
     }
 
-    const hoveredCellId = resolvePointerCellId(event);
-    if (!hoveredCellId) {
+    const lngLat = resolvePointerLngLat(event);
+    const hoveredCellId = lngLat ? displayedCellIdAt(lngLat.lat, lngLat.lng) : null;
+    if (!hoveredCellId || !getDisplayCell(hoveredCellId)) {
       clearMapHover();
       return;
     }
@@ -2029,84 +1546,82 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
   }
 
   function handleMapClick(event) {
-    const hoveredCellId = store.getState().hoveredCell;
-    const selectedCellId = hoveredCellId ?? resolvePointerCellId(event, { allowNearestGrid: true });
-    if (selectedCellId) {
-      store.selectCell(selectedCellId);
-      focusSelectedCell(selectedCellId);
+    const lngLat = resolvePointerLngLat(event);
+    if (!lngLat) {
+      return;
+    }
+    const cellId = displayedCellIdAt(lngLat.lat, lngLat.lng);
+    if (cellId && getDisplayCell(cellId)) {
+      store.selectCell(cellId, { lat: lngLat.lat, lon: lngLat.lng });
     }
   }
 
-  function scheduleCenterDotRefresh() {
-    if (!Number.isInteger(currentH3Resolution)) {
-      latestCenterDotFeatures = [];
+  // Keeps the selection on the cell that contains the selection anchor whenever the
+  // displayed level (zoom-dependent resolution or hexagon/grid unit) changes.
+  function remapSelectionToDisplayedLevel() {
+    const { selectedCell, selectedAnchor } = currentAppState;
+    if (!selectedCell) {
       return;
     }
-    if (centerDotFrame) {
-      return;
+    const anchor = selectedAnchor ?? getDisplayCell(selectedCell);
+    const nextId = anchor ? displayedCellIdAt(anchor.lat, anchor.lon) : null;
+    if (nextId && nextId !== selectedCell) {
+      if (activeSearchSelection?.cellId === selectedCell) {
+        activeSearchSelection.cellId = nextId;
+      }
+      store.remapSelectedCell(nextId);
     }
-    centerDotFrame = requestAnimationFrame(() => {
-      centerDotFrame = null;
-      updateVisibleCenterDots(map, currentH3Resolution, (features) => {
-        latestCenterDotFeatures = features;
+  }
+
+  function syncSelectionHighlight() {
+    syncSelectedMapCell(map, currentAppState.selectedCell);
+    if (committedOverlayState) {
+      glyphOverlay.syncInteractionState({
+        ...committedOverlayState,
+        hoveredCell: currentAppState.hoveredCell,
+        hoveredPosition: currentAppState.hoveredPosition,
+        selectedCell: currentAppState.selectedCell,
+        displayedSelectedCell: currentAppState.selectedCell
       });
-    });
-  }
-
-  function updateDebugLabel() {
-    if (debugLabel) {
-      const zoom = map.getZoom();
-      const pendingResolution = getAdaptiveH3Resolution(
-        map,
-        metadata,
-        currentAppState,
-        liveDensityLevel,
-        currentH3Resolution
-      );
-      const resolutionLabel = currentUnit === 'grid'
-        ? 'Grid'
-        : Number.isInteger(currentH3Resolution)
-          ? pendingResolution === currentH3Resolution
-            ? `H3 L${currentH3Resolution}`
-            : `H3 L${currentH3Resolution} -> L${pendingResolution}`
-          : 'No H3';
-      debugLabel.textContent = `Zoom ${zoom.toFixed(2)} | ${resolutionLabel} | Glyphs ${latestGlyphCount}`;
     }
   }
 
-  function applyDisplayedGeometryResolution(nextResolution, state = currentAppState, densityLevel = liveDensityLevel) {
-    currentH3Resolution = nextResolution;
-    currentH3FeatureCollection = updateGeometrySources(map, cells, rawCells, metadata, currentH3Resolution);
-    scheduleCenterDotRefresh();
-    updateHoveredGeometryFromState(state);
-    syncSelectedMapCell(map, resolveDisplayedCellId(state.selectedCell, currentH3Resolution));
-    if (GLYPHS_ENABLED) {
-      committedOverlayState = buildOverlayState(cells, rawCells, metadata, state, densityLevel, currentH3Resolution);
-      currentDisplayedCellSourceMap = new Map(
-        committedOverlayState.renderableCells.map((cell) => [cell.id, cell.sourceId ?? cell.id])
-      );
-      glyphOverlay.renderContent(committedOverlayState);
-      scheduleLayout(committedOverlayState, interactionPhase, densityLevel);
+  function applyDisplayedGeometry() {
+    const geometryKey = currentUnit === 'grid' ? `grid:${currentGridDegrees}` : `h3:${currentH3Resolution}`;
+    const geometryChanged = geometryKey !== displayedGeometryKey;
+    displayedGeometryKey = geometryKey;
+    store.setDisplayedResolution(currentUnit === 'grid' ? null : currentH3Resolution, currentUnit === 'grid' ? currentGridDegrees : null);
+    if (geometryChanged) {
+      updateGeometrySources(map, currentH3Resolution, currentGridDegrees, currentUnit);
+      if (currentAppState.hoveredCell) {
+        store.setHoveredCell(null, null);
+      }
+      remapSelectionToDisplayedLevel();
+      latestVisibleCellIds = new Set();
     }
-    updateDebugLabel();
+    syncHoveredMapCell(map, currentAppState.hoveredCell);
+    refreshViewportDomains();
+    rebuildOverlayState();
+    glyphOverlay.renderContent(committedOverlayState);
+    syncSelectionHighlight();
+    scheduleLayout(committedOverlayState, interactionPhase, currentDensityLevel);
   }
 
-  function syncH3ResolutionForViewport() {
-    const nextResolution = getAdaptiveH3Resolution(
-      map,
-      metadata,
-      currentAppState,
-      liveDensityLevel,
-      currentH3Resolution
-    );
-    if (nextResolution === currentH3Resolution) {
-      return;
+  function syncGeometryResolutionForViewport() {
+    const nextH3Resolution = getAdaptiveH3Resolution(map, metadata, liveDensityLevel);
+    const nextGridDegrees = getAdaptiveGridDegrees(map, liveDensityLevel);
+    const changed = currentUnit === 'grid' ? nextGridDegrees !== currentGridDegrees : nextH3Resolution !== currentH3Resolution;
+    currentH3Resolution = nextH3Resolution;
+    currentGridDegrees = nextGridDegrees;
+    if (changed) {
+      currentDensityLevel = liveDensityLevel;
+      applyDisplayedGeometry();
     }
-    applyDisplayedGeometryResolution(nextResolution, currentAppState, liveDensityLevel);
+    return changed;
   }
 
   function scheduleLayout(state = committedOverlayState, phase = interactionPhase, densityLevel = liveDensityLevel) {
-    if (!GLYPHS_ENABLED) {
+    if (!state) {
       return;
     }
     scheduledState = state;
@@ -2133,7 +1648,7 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
     if (interactionPhase !== 'moving') {
       interactionPhase = 'moving';
       glyphOverlay.setInteractionPhase('moving');
-      if (GLYPHS_ENABLED && store.getState().hoveredCell) {
+      if (store.getState().hoveredCell) {
         store.setHoveredCell(null, null);
       }
     }
@@ -2141,24 +1656,20 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
 
   function commitFullRefresh() {
     currentDensityLevel = liveDensityLevel;
-    if (GLYPHS_ENABLED) {
-      committedOverlayState = buildOverlayState(cells, rawCells, metadata, currentAppState, currentDensityLevel, currentH3Resolution);
-      glyphOverlay.renderContent(committedOverlayState);
-    }
     interactionPhase = 'idle';
     glyphOverlay.setInteractionPhase('idle');
-    if (GLYPHS_ENABLED) {
-      scheduleLayout(committedOverlayState, 'idle', currentDensityLevel);
-    }
+    refreshViewportDomains();
+    rebuildOverlayState();
+    glyphOverlay.renderContent(committedOverlayState);
+    syncSelectionHighlight();
+    scheduleLayout(committedOverlayState, 'idle', currentDensityLevel);
   }
 
   function settleAfterMovement() {
     cancelSettlingRefresh();
     interactionPhase = 'settling';
     glyphOverlay.setInteractionPhase('settling');
-    if (GLYPHS_ENABLED) {
-      scheduleLayout(committedOverlayState, 'settling', liveDensityLevel);
-    }
+    scheduleLayout(committedOverlayState, 'settling', liveDensityLevel);
     settleTimer = setTimeout(() => {
       settleTimer = null;
       commitFullRefresh();
@@ -2170,83 +1681,47 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
     map.setProjection({ type: 'globe' });
     map.setBearing(0);
     currentUnit = currentAppState.unit ?? 'hexagon';
-    currentH3Resolution = getAdaptiveH3Resolution(
-      map,
-      metadata,
-      currentAppState,
-      currentDensityLevel,
-      currentH3Resolution
-    );
-    if (GLYPHS_ENABLED) {
-      committedOverlayState = buildOverlayState(cells, rawCells, metadata, currentAppState, currentDensityLevel, currentH3Resolution);
-    }
-    updateDebugLabel();
-    if (typeof map.setFog === 'function') {
-      map.setFog({
-        color: '#031017',
-        'high-color': '#081c27',
-        'horizon-blend': 0.16,
-        'space-color': '#01060a',
-        'star-intensity': 0.15
-      });
-    }
-    addGeometryLayers(map, currentH3Resolution, metadata, cells, rawCells);
+    currentH3Resolution = getAdaptiveH3Resolution(map, metadata, currentDensityLevel);
+    currentGridDegrees = getAdaptiveGridDegrees(map, currentDensityLevel);
+    addGeometryLayers(map, currentH3Resolution, currentGridDegrees);
     void addReferenceLabelLayers(map, currentAppState).then(() => liftInteractiveCellLayers(map));
     setUnitLayerVisibility(map, currentUnit);
-    applyDisplayedGeometryResolution(currentH3Resolution, currentAppState, currentDensityLevel);
+    applyDisplayedGeometry();
     updateLineLayerOpacity(currentAppState.strokeOpacity ?? 1);
     map.on('mousemove', handleMapPointerMove);
     map.on('click', handleMapClick);
     map.on('mouseout', clearMapHover);
-    scheduleCenterDotRefresh();
-    if (GLYPHS_ENABLED) {
-      glyphOverlay.setOpacity(store.getState().symbolOpacity ?? 0.2);
-      requestAnimationFrame(() => {
-        scheduleLayout(committedOverlayState, 'idle', currentDensityLevel);
-      });
-    }
-    finishRenderLoading(initialLoadingSequence);
-  });
-
-  if (GLYPHS_ENABLED) {
+    glyphOverlay.setOpacity(store.getState().symbolOpacity ?? 0.9);
     map.once('idle', () => {
-      scheduleLayout(committedOverlayState, 'idle', currentDensityLevel);
+      commitFullRefresh();
     });
-  }
-
-  map.on('move', () => {
-    scheduleCenterDotRefresh();
+    finishRenderLoading(initialLoadingSequence);
   });
 
   map.on('movestart', () => {
     startInteraction();
-    if (GLYPHS_ENABLED) {
-      scheduleLayout(committedOverlayState, 'moving', liveDensityLevel);
-    }
+    scheduleLayout(committedOverlayState, 'moving', liveDensityLevel);
   });
 
-  if (GLYPHS_ENABLED) {
-    map.on('move', () => {
-      scheduleLayout(committedOverlayState, interactionPhase, liveDensityLevel);
-    });
-  }
+  map.on('move', () => {
+    scheduleLayout(committedOverlayState, interactionPhase, liveDensityLevel);
+  });
 
   map.on('moveend', () => {
     if (map.getBearing() !== 0) {
       map.setBearing(0);
     }
-    syncH3ResolutionForViewport();
-    updateDebugLabel();
+    syncGeometryResolutionForViewport();
     settleAfterMovement();
   });
 
   map.on('zoom', () => {
     liveDensityLevel = getDensityLevelForZoom(map.getZoom());
-    updateDebugLabel();
-    scheduleCenterDotRefresh();
-    if (GLYPHS_ENABLED) {
-      scheduleLayout(committedOverlayState, interactionPhase === 'idle' ? 'moving' : interactionPhase, liveDensityLevel);
-    }
+    scheduleLayout(committedOverlayState, interactionPhase === 'idle' ? 'moving' : interactionPhase, liveDensityLevel);
+  });
+
+  window.addEventListener('resize', () => {
+    scheduleLayout(committedOverlayState, interactionPhase, liveDensityLevel);
   });
 
   function updateLineLayerOpacity(strokeOpacity = 1) {
@@ -2330,6 +1805,15 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
     setPaintIfLayerExists(GRID_SELECTED_LAYER_ID, 'line-opacity', 0.98);
   }
 
+  const CONTENT_CHANGE_KEYS = new Set([
+    'symbol',
+    'variable',
+    'colorScaleMode',
+    'ranges',
+    'periodMonths',
+    'glyphSize'
+  ]);
+
   return {
     handleStateChange(state, previousState, changedKey) {
       currentAppState = state;
@@ -2347,105 +1831,49 @@ export async function createMapView({ container, metadata, cells, rawCells, stor
         syncLabelLayerVisibility(map, state);
       }
 
-      if (changedKey === 'hoveredCell' || changedKey === 'init') {
-        updateHoveredGeometryFromState(state);
+      if (changedKey === 'symbolOpacity') {
+        glyphOverlay.setOpacity(state.symbolOpacity ?? 0.9);
       }
 
-      if (changedKey === 'selectedCell' || changedKey === 'init') {
-        syncSelectedMapCell(
-          map,
-          currentUnit === 'grid' ? state.selectedCell : resolveDisplayedCellId(state.selectedCell, currentH3Resolution)
-        );
-      }
-
-      if (!map.loaded()) {
-        return;
-      }
-
-      const contentChange =
-        changedKey === 'init' ||
-        changedKey === 'mode' ||
-        changedKey === 'symbol' ||
-        changedKey === 'unit' ||
-        changedKey === 'variable' ||
-        changedKey === 'colorScaleMode' ||
-        changedKey === 'ranges' ||
-        changedKey === 'periodMonths' ||
-        changedKey === 'glyphSize' ||
-        changedKey === 'selectedCell';
-
-      if (changedKey === 'unit' || changedKey === 'symbol') {
-        currentUnit = state.unit ?? 'hexagon';
-        setUnitLayerVisibility(map, currentUnit);
-        updateHoveredGeometryFromState(state);
-
-        if (activeSearchSelection) {
-          const nextSelectedCellId = resolveSearchSelectionCellId(activeSearchSelection.lat, activeSearchSelection.lon, state);
-          if (nextSelectedCellId && nextSelectedCellId !== state.selectedCell) {
-            activeSearchSelection = {
-              ...activeSearchSelection,
-              cellId: nextSelectedCellId,
-              unit: currentUnit
-            };
-            store.selectCell(nextSelectedCellId);
-            return;
-          }
-          activeSearchSelection = {
-            ...activeSearchSelection,
-            cellId: nextSelectedCellId,
-            unit: currentUnit
-          };
+      if (changedKey === 'hoveredCell' && previousState?.hoveredCell !== state.hoveredCell) {
+        syncHoveredMapCell(map, state.hoveredCell);
+        if (committedOverlayState) {
+          glyphOverlay.syncInteractionState({
+            ...committedOverlayState,
+            hoveredCell: state.hoveredCell,
+            hoveredPosition: state.hoveredPosition,
+            selectedCell: state.selectedCell,
+            displayedSelectedCell: state.selectedCell
+          });
         }
       }
 
-      if (contentChange) {
-        scheduleContentRefresh(state, changedKey);
+      if (changedKey === 'selectedCell' || changedKey === 'selectedCellRemap') {
+        syncSelectionHighlight();
+        if (activeSearchSelection && state.selectedCell !== activeSearchSelection.cellId) {
+          clearSearchSelectionMarker();
+        }
+        const fromSearch = activeSearchSelection && state.selectedCell === activeSearchSelection.cellId;
+        if (changedKey === 'selectedCell' && state.selectedCell && !fromSearch) {
+          focusSelection(state);
+        }
       }
 
-      if (GLYPHS_ENABLED && changedKey === 'hoveredCell' && state.hoveredCell && !state.hoveredPosition && interactionPhase === 'idle') {
-        scheduleLayout(committedOverlayState, 'idle', currentDensityLevel);
+      if (!map.loaded() || changedKey === 'init') {
+        return;
       }
 
-      if (changedKey === 'unit' || changedKey === 'symbol' || changedKey === 'init') {
-        updateHoveredGeometryFromState(state);
-      } else if (changedKey === 'hoveredCell' && previousState?.hoveredCell !== state.hoveredCell) {
-        updateHoveredGeometryFromState(state);
+      if (changedKey === 'symbol' && state.unit !== currentUnit) {
+        currentUnit = state.unit ?? 'hexagon';
+        setUnitLayerVisibility(map, currentUnit);
       }
 
-      if (
-        GLYPHS_ENABLED &&
-        (
-          changedKey === 'init' ||
-          changedKey === 'unit' ||
-          changedKey === 'symbol' ||
-          changedKey === 'selectedCell' ||
-          (changedKey === 'hoveredCell' && previousState?.hoveredCell !== state.hoveredCell)
-        )
-      ) {
-        glyphOverlay.syncInteractionState({
-          ...(committedOverlayState ?? state),
-          hoveredCell: state.hoveredCell,
-          hoveredPosition: state.hoveredPosition,
-          selectedCell: state.selectedCell,
-          displayedSelectedCell: currentUnit === 'grid' ? state.selectedCell : resolveDisplayedCellId(state.selectedCell, currentH3Resolution),
-          displayedH3Resolution: currentH3Resolution
-        });
+      if (changedKey === 'chartValueScaleMode') {
+        refreshViewportDomains();
       }
 
-      if (GLYPHS_ENABLED && changedKey === 'symbolOpacity') {
-        glyphOverlay.setOpacity(state.symbolOpacity ?? 0.2);
-      }
-
-      if (changedKey === 'selectedCell' && state.selectedCell === null && previousState?.selectedCell) {
-        applyDisplayedGeometryResolution(currentH3Resolution, state, currentDensityLevel);
-      }
-
-      if (changedKey === 'selectedCell' && state.selectedCell && state.selectedCell !== previousState?.selectedCell) {
-        focusSelectedCell(state.selectedCell);
-      }
-
-      if (activeSearchSelection && state.selectedCell !== activeSearchSelection.cellId) {
-        clearSearchSelectionMarker();
+      if (CONTENT_CHANGE_KEYS.has(changedKey)) {
+        scheduleContentRefresh(changedKey);
       }
     }
   };

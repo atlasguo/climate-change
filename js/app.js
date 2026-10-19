@@ -25,7 +25,7 @@ function buildSymbolIconMarkup(icon) {
   if (icon === 'pulse') {
     return `
       <svg class="symbol-button__mode symbol-button__mode--pulse" viewBox="0 0 48 36" aria-hidden="true">
-        <polyline points="4,26 14,21 23,24 33,14 44,10" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" />
+        <polyline points="4,26 14,21 23,24 33,14 44,10" fill="none" stroke="currentColor" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     `;
   }
@@ -48,21 +48,22 @@ function buildSymbolIconMarkup(icon) {
   `;
 }
 
-function buildSymbolOptionsMarkup() {
-  return SYMBOL_OPTIONS.map(
+function buildSymbolOptionsMarkup(unit) {
+  return SYMBOL_OPTIONS.filter((o) => o.unit === unit).map(
     (option) => `
       <button
+        type="button"
         class="segmented__button symbol-button"
         data-symbol-mode="${option.mode}"
         data-symbol-unit="${option.unit}"
         title="${option.label} / ${option.meta}"
+        aria-label="${option.label} symbol, ${option.meta.toLowerCase()} unit"
+        aria-pressed="false"
       >
         <span class="symbol-button__preview symbol-button__preview--${option.unit}">
           ${buildSymbolMatrixMarkup(option.unit)}
           ${buildSymbolIconMarkup(option.icon)}
         </span>
-        <span class="symbol-button__caption">${option.label}</span>
-        <span class="symbol-button__meta">${option.meta}</span>
       </button>
     `
   ).join('');
@@ -93,7 +94,11 @@ const SHELL = `
               </svg>
               <span class="segmented__button-label">Temperature</span>
             </span>
-            <span class="segmented__button-scale segmented__button-scale--temperature" aria-hidden="true"></span>
+            <span class="segmented__button-scale-row">
+              <span class="segmented__button-sign">&minus;</span>
+              <span class="segmented__button-scale segmented__button-scale--temperature" aria-hidden="true"></span>
+              <span class="segmented__button-sign">+</span>
+            </span>
             <span class="segmented__button-meta">Anomaly</span>
           </button>
           <button class="segmented__button segmented__button--with-scale" data-variable="precipitation">
@@ -103,10 +108,22 @@ const SHELL = `
               </svg>
               <span class="segmented__button-label">Precipitation</span>
             </span>
-            <span class="segmented__button-scale segmented__button-scale--precipitation" aria-hidden="true"></span>
+            <span class="segmented__button-scale-row">
+              <span class="segmented__button-sign">&minus;</span>
+              <span class="segmented__button-scale segmented__button-scale--precipitation" aria-hidden="true"></span>
+              <span class="segmented__button-sign">+</span>
+            </span>
             <span class="segmented__button-meta">Anomaly</span>
           </button>
         </div>
+        <fieldset class="legend__radio-group legend__radio-group--panel" data-color-scale-group>
+          <legend class="legend__radio-group-label">Color scale</legend>
+          <div class="legend__radio-options">
+            <label class="legend__radio"><input type="radio" name="panel-color-scale" value="local" checked /><span>Individual</span></label>
+            <label class="legend__radio"><input type="radio" name="panel-color-scale" value="viewport" /><span>Extent</span></label>
+            <label class="legend__radio"><input type="radio" name="panel-color-scale" value="global" /><span>Global</span></label>
+          </div>
+        </fieldset>
       </section>
 
       <section class="panel-section">
@@ -116,29 +133,39 @@ const SHELL = `
           </div>
         </div>
         <div class="symbol-grid">
-          ${buildSymbolOptionsMarkup()}
+          <span class="symbol-grid__unit-info"><span class="symbol-grid__unit-label">Unit:</span><span data-bind="symbol-unit-info"></span></span>
+          <span class="symbol-grid__col-header">Pulse</span>
+          <span class="symbol-grid__col-header">Column</span>
+          <span class="symbol-grid__col-header">Cone</span>
+          <span class="symbol-grid__freq">Yearly</span>
+          <span class="symbol-grid__freq">Yearly</span>
+          <span class="symbol-grid__freq">Monthly</span>
+          <span class="symbol-grid__row-header">Grid</span>
+          ${buildSymbolOptionsMarkup('grid')}
+          <span class="symbol-grid__row-header">Hexagon</span>
+          ${buildSymbolOptionsMarkup('hexagon')}
         </div>
         <div class="symbol-adjustments">
           <div class="opacity-control">
-            <label class="opacity-control__label">
-              <span>Size</span>
-              <span data-bind="symbol-size-value">50%</span>
+            <label class="opacity-control__label" for="symbol-size-slider">
+              <span id="symbol-size-label">Size</span>
+              <span data-bind="symbol-size-value">40%</span>
             </label>
-            <input class="opacity-control__slider" type="range" min="0" max="100" step="1" value="50" data-symbol-size />
+            <input class="opacity-control__slider" type="range" min="0" max="100" step="1" value="40" id="symbol-size-slider" aria-labelledby="symbol-size-label" data-symbol-size />
           </div>
           <div class="opacity-control">
-            <label class="opacity-control__label">
-              <span>Opacity</span>
+            <label class="opacity-control__label" for="symbol-opacity-slider">
+              <span id="symbol-opacity-label">Opacity</span>
               <span data-bind="symbol-opacity-value">90%</span>
             </label>
-            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="90" data-symbol-opacity />
+            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="90" id="symbol-opacity-slider" aria-labelledby="symbol-opacity-label" data-symbol-opacity />
           </div>
           <div class="opacity-control">
-            <label class="opacity-control__label">
-              <span>Cell Outline</span>
-              <span data-bind="symbol-stroke-value">5%</span>
+            <label class="opacity-control__label" for="symbol-stroke-slider">
+              <span id="symbol-stroke-label">Cell Outline</span>
+              <span data-bind="symbol-stroke-value">10%</span>
             </label>
-            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="5" data-symbol-stroke />
+            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="10" id="symbol-stroke-slider" aria-labelledby="symbol-stroke-label" data-symbol-stroke />
           </div>
         </div>
       </section>
@@ -257,10 +284,13 @@ const SHELL = `
             </select>
           </label>
           <button class="ghost-button" data-action="reset-ranges">Reset temporal range</button>
-          <label class="timeline-toggle timeline-toggle--roni">
-            <input type="checkbox" data-timeline-oni-toggle checked />
-            <span class="timeline-toggle__label">RONI: <span class="timeline-toggle__elnino">El Niño</span> and <span class="timeline-toggle__lanina">La Niña</span> (1940-2025)</span>
-          </label>
+          <div class="timeline-toggle timeline-toggle--roni">
+            <label class="timeline-toggle__control">
+              <input type="checkbox" data-timeline-oni-toggle checked />
+              <span class="timeline-toggle__label">RONI: <span class="timeline-toggle__elnino">El Niño</span> and <span class="timeline-toggle__lanina">La Niña</span> <span data-bind="roni-range"></span></span>
+            </label>
+            <a class="timeline-toggle__help" href="https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/roni/" target="_blank" rel="noopener noreferrer" title="What is RONI?" aria-label="What is RONI?">?</a>
+          </div>
         </div>
       </div>
 
@@ -283,9 +313,22 @@ const SHELL = `
 export async function initApp(root) {
   root.innerHTML = SHELL;
 
-  const climateData = await loadClimateData();
+  const loading = root.querySelector('[data-map-loading]');
+  const showStartupProgress = ({ title, detail }) => {
+    loading.hidden = false;
+    loading.setAttribute('aria-hidden', 'false');
+    root.querySelector('[data-map-loading-title]').textContent = title;
+    root.querySelector('[data-map-loading-detail]').textContent = detail;
+  };
+  const climateData = await loadClimateData({ onProgress: showStartupProgress });
+  const roniPoints = climateData.roni;
+  if (roniPoints.length) {
+    const firstYear = roniPoints[0].monthLabel?.slice(0, 4) ?? roniPoints[0].year;
+    const lastYear = roniPoints[roniPoints.length - 1].monthLabel?.slice(0, 4) ?? roniPoints[roniPoints.length - 1].year;
+    root.querySelector('[data-bind="roni-range"]').textContent = `(${firstYear}–${lastYear})`;
+  }
   const store = createStore(climateData.metadata);
-  const ui = createUI(root, store, climateData.metadata, climateData.cells, climateData.rawCells, climateData.roni);
+  const ui = createUI(root, store, climateData.metadata, climateData.rawCells, climateData.roni, climateData.globalCell);
   ui.setMapLoading({
     active: true,
     title: 'Preparing globe',
@@ -294,7 +337,6 @@ export async function initApp(root) {
   const mapView = await createMapView({
     container: root.querySelector('#map'),
     metadata: climateData.metadata,
-    cells: climateData.cells,
     rawCells: climateData.rawCells,
     store,
     onLoadingChange: ui.setMapLoading

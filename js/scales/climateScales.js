@@ -1,5 +1,3 @@
-import paletteConfig from '../../config/visual-palettes.json' with { type: 'json' };
-
 export const TEMP_TREND_DOMAIN = [-1.4, 1.4];
 export const PRECIP_TREND_DOMAIN = [-15, 15];
 export const TEMP_COMPARE_DOMAIN = [-3, 3];
@@ -16,9 +14,24 @@ export const MODE_LABELS = {
   ring: 'Cone'
 };
 
-export const TEMP_LINE_PALETTE = [...paletteConfig.temperature];
-export const PRECIP_LINE_PALETTE = [...paletteConfig.precipitation];
-export const RONI_PALETTE = [...paletteConfig.roni];
+// Filled from config/visual-palettes.json at startup via applyPaletteConfig().
+export const TEMP_LINE_PALETTE = [];
+export const PRECIP_LINE_PALETTE = [];
+export const RONI_PALETTE = [];
+
+export function applyPaletteConfig(config) {
+  const entries = [
+    [TEMP_LINE_PALETTE, config?.temperature],
+    [PRECIP_LINE_PALETTE, config?.precipitation],
+    [RONI_PALETTE, config?.roni]
+  ];
+  for (const [target, colors] of entries) {
+    if (!Array.isArray(colors) || colors.length !== 5 || !colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))) {
+      throw new Error('Invalid palette configuration: each palette needs five #RRGGBB colors.');
+    }
+    target.splice(0, target.length, ...colors);
+  }
+}
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -56,15 +69,6 @@ export function paletteForVariable(variable) {
 
 export function buildPaletteGradient(variable) {
   return `linear-gradient(90deg, ${paletteForVariable(variable).join(', ')})`;
-}
-
-export function buildPaletteConicGradient(variable) {
-  const palette = paletteForVariable(variable);
-  const lastIndex = Math.max(1, palette.length - 1);
-  const stops = palette
-    .map((color, index) => `${color} ${((index / lastIndex) * 100).toFixed(2)}%`)
-    .join(', ');
-  return `conic-gradient(from -90deg, ${stops})`;
 }
 
 export function domainForVariable(variable, trendMode, domainOverrides = {}) {
@@ -108,13 +112,11 @@ export function buildLegendMarkup(
   variable,
   trendMode,
   domainOverrides = {},
-  colorScaleMode = 'local',
   showValueScaleToggle = false,
   chartValueScaleMode = 'local'
 ) {
   const palette = paletteForVariable(variable);
   const domain = domainForVariable(variable, trendMode, domainOverrides);
-  const showLocal = colorScaleMode === 'local';
   const includePlus = true;
   const left = formatDomainValue(domain[0], 1, includePlus);
   const right = formatDomainValue(domain[1], 1, includePlus);
@@ -129,18 +131,18 @@ export function buildLegendMarkup(
         <span>${left} ${unit}</span>
         <span>${right} ${unit}</span>
       </div>
-      <div class="legend__controls">
-        <label class="legend__toggle">
-          <input type="checkbox" data-legend-color-scale ${showLocal ? '' : 'checked'} />
-          <span>Universal color scale</span>
-        </label>
-        ${showValueScaleToggle ? `
-          <label class="legend__toggle legend__toggle--value-scale">
-            <input type="checkbox" data-chart-value-scale ${chartValueScaleMode === 'global' ? 'checked' : ''} />
-            <span>Universal value scale</span>
-          </label>
-        ` : ''}
-      </div>
+      ${showValueScaleToggle ? `
+        <div class="legend__controls">
+          <fieldset class="legend__radio-group" data-scale-group="value">
+            <legend class="legend__radio-group-label">Value scale</legend>
+            <div class="legend__radio-options">
+              <label class="legend__radio"><input type="radio" name="legend-value-scale" value="local" ${chartValueScaleMode === 'local' ? 'checked' : ''} /><span>Individual</span></label>
+              <label class="legend__radio"><input type="radio" name="legend-value-scale" value="viewport" ${chartValueScaleMode === 'viewport' ? 'checked' : ''} /><span>Extent</span></label>
+              <label class="legend__radio"><input type="radio" name="legend-value-scale" value="global" ${chartValueScaleMode === 'global' ? 'checked' : ''} /><span>Global</span></label>
+            </div>
+          </fieldset>
+        </div>
+      ` : ''}
     </div>
   `;
 }

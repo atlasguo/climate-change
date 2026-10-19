@@ -1,6 +1,7 @@
 {
   "version": 8,
   "name": "climate-globe-dark",
+  "glyphs": "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
   "projection": {
     "type": "globe"
   },
@@ -58,7 +59,7 @@
         "visibility": "visible"
       },
       "paint": {
-        "fill-color": "#141719",
+        "fill-color": "#181c1f",
         "fill-opacity": 1
       }
     },
@@ -92,15 +93,15 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#141719",
+        "line-color": "#181c1f",
         "line-opacity": [
           "interpolate",
           ["linear"],
           ["zoom"],
           0,
-          0.16,
+          0.18,
           4,
-          0.34
+          0.39
         ],
         "line-width": [
           "interpolate",

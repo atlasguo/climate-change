@@ -10,6 +10,17 @@ const visibleDomainCache = new Map();
 const cellSummaryCache = new Map();
 const renderableCellsCache = new Map();
 const seriesDomainCache = new Map();
+const CACHE_LIMIT = 60000;
+
+// Caches are keyed by the full view state; when one grows past the limit it is reset
+// rather than evicted entry by entry.
+function cacheSet(cache, key, value, limit = CACHE_LIMIT) {
+  if (cache.size >= limit) {
+    cache.clear();
+  }
+  cache.set(key, value);
+  return value;
+}
 
 function buildDomainCacheKey(domainOverrides = {}) {
   const temp = domainOverrides.temperature ?? [];
@@ -22,8 +33,15 @@ function buildDomainCacheKey(domainOverrides = {}) {
   ].join('|');
 }
 
+const monthIndexLookup = new WeakMap();
+
 export function getMonthIndex(metadata, monthLabel) {
-  return metadata.monthLabels.indexOf(monthLabel);
+  let lookup = monthIndexLookup.get(metadata.monthLabels);
+  if (!lookup) {
+    lookup = new Map(metadata.monthLabels.map((label, index) => [label, index]));
+    monthIndexLookup.set(metadata.monthLabels, lookup);
+  }
+  return lookup.get(monthLabel) ?? -1;
 }
 
 export function getRangeIndices(metadata, range) {
@@ -37,17 +55,20 @@ export function isTrendMode(metadata, state) {
 }
 
 export function getWindowStateKey(metadata, state) {
-  return `${state.rangeA.start}|${state.rangeB.start}|${state.periodMonths ?? 1}`;
+  return [
+    state.rangeA.start,
+    state.rangeB.start,
+    state.periodMonths ?? 1,
+    state.unit ?? '',
+    state.displayedH3Resolution ?? '',
+    state.displayedGridDegrees ?? ''
+  ].join('|');
 }
 
 export function getDensityLevelForZoom(zoom) {
   if (zoom < 1.05) return 'low';
   if (zoom < 1.8) return 'medium';
   return 'high';
-}
-
-export function filterCellsForDensity(cells, densityLevel) {
-  return cells;
 }
 
 export function aggregateSeriesWindow(values, startIndex, endIndex, periodMonths) {
@@ -92,7 +113,7 @@ export function getAggregatedSeries(cell, metadata, state, variable) {
   const source = getVariableSeries(cell, variable);
   const values = aggregateSeriesWindow(source, startIndex, endIndex, periodMonths);
   const normalized = variable === 'temperature' ? values : values.map((value) => value * 100);
-  aggregatedSeriesCache.set(key, normalized);
+  cacheSet(aggregatedSeriesCache, key, normalized);
   return normalized;
 }
 
@@ -131,7 +152,7 @@ export function getBucketedSeries(cell, metadata, state, variable) {
   }
 
   const normalized = buckets;
-  bucketedSeriesCache.set(key, normalized);
+  cacheSet(bucketedSeriesCache, key, normalized);
   return normalized;
 }
 
@@ -201,37 +222,66 @@ function toRobustPrecipDomain(values, fallback) {
   return toSafeDomain(clippedLower, clippedUpper, fallback);
 }
 
-export function getCommittedValueDomains(cells, metadata, state) {
-  const key = `${getWindowStateKey(metadata, state)}|${cells.length}`;
-  if (visibleDomainCache.has(key)) {
+export function getCommittedValueDomains(cells, metadata, state, { cache = true } = {}) {
+  const key = `${getWindowStateKey(metadata, state)}|${cells.length}|${cells[0]?.id ?? ''}|${cells[cells.length - 1]?.id ?? ''}`;
+  if (cache && visibleDomainCache.has(key)) {
     return visibleDomainCache.get(key);
   }
 
   let tempMin = Infinity;
   let tempMax = -Infinity;
   const precipValues = [];
+  // Precipitation uses robust quantiles; a strided sample keeps the sort cheap for large views.
+  const windowStart = getMonthIndex(metadata, state.rangeA.start);
+  const windowLength = Math.max(windowStart, getMonthIndex(metadata, state.rangeB.start)) - windowStart + 1;
+  const pointsPerCell = Math.ceil(windowLength / (state.periodMonths ?? 1));
+  const precipStride = Math.max(1, Math.ceil((cells.length * pointsPerCell) / 200000));
+  let precipCursor = 0;
+
+  // Aggregates are computed inline (not through the per-cell series cache) because this
+  // runs over every sample whenever the time window changes.
+  const startIndex = getMonthIndex(metadata, state.rangeA.start);
+  const endIndex = Math.max(startIndex, getMonthIndex(metadata, state.rangeB.start));
+  const periodMonths = state.periodMonths ?? 1;
 
   for (const cell of cells) {
-    const tempValues = getAggregatedSeries(cell, metadata, state, 'temperature');
-    const aggregatedPrecipValues = getAggregatedSeries(cell, metadata, state, 'precipitation');
-
-    for (const value of tempValues) {
-      if (value < tempMin) tempMin = value;
-      if (value > tempMax) tempMax = value;
+    const temp = cell.tempSeries;
+    const precip = cell.precipSeries;
+    for (let index = startIndex; index <= endIndex; index += periodMonths) {
+      const bucketEnd = Math.min(endIndex, index + periodMonths - 1);
+      let tempTotal = 0;
+      let precipTotal = 0;
+      for (let cursor = index; cursor <= bucketEnd; cursor += 1) {
+        tempTotal += temp[cursor];
+        precipTotal += precip[cursor];
+      }
+      const count = bucketEnd - index + 1;
+      const tempValue = tempTotal / count;
+      if (tempValue < tempMin) tempMin = tempValue;
+      if (tempValue > tempMax) tempMax = tempValue;
+      if (precipCursor % precipStride === 0) {
+        precipValues.push((precipTotal / count) * 100);
+      }
+      precipCursor += 1;
     }
-    precipValues.push(...aggregatedPrecipValues);
   }
 
   const domains = {
     temperature: toSafeDomain(tempMin, tempMax, [-3, 3]),
     precipitation: toRobustPrecipDomain(precipValues, [-90, 90])
   };
-  visibleDomainCache.set(key, domains);
+  if (cache) {
+    cacheSet(visibleDomainCache, key, domains, 64);
+  }
   return domains;
 }
 
-export function getSeriesColorDomain(cell, metadata, state, variable, globalDomains = null) {
-  const key = `${state.colorScaleMode ?? 'local'}|${getWindowStateKey(metadata, state)}|${cell.id}|${variable}`;
+export function getSeriesColorDomain(cell, metadata, state, variable, globalDomains = null, viewportDomains = null) {
+  const mode = state.colorScaleMode ?? 'local';
+  const vpSuffix = mode === 'viewport' && viewportDomains?.[variable]
+    ? `|vp:${viewportDomains[variable][0].toFixed(3)},${viewportDomains[variable][1].toFixed(3)}`
+    : '';
+  const key = `${mode}|${getWindowStateKey(metadata, state)}|${cell.id}|${variable}${vpSuffix}`;
   if (seriesDomainCache.has(key)) {
     return seriesDomainCache.get(key);
   }
@@ -239,14 +289,20 @@ export function getSeriesColorDomain(cell, metadata, state, variable, globalDoma
   const fallbackDomains = globalDomains ?? getCommittedValueDomains([cell], metadata, state);
   const fallback = fallbackDomains[variable];
 
-  if ((state.colorScaleMode ?? 'local') !== 'local') {
-    seriesDomainCache.set(key, fallback);
+  if (mode === 'global') {
+    cacheSet(seriesDomainCache, key, fallback);
     return fallback;
+  }
+
+  if (mode === 'viewport') {
+    const vpDomain = viewportDomains?.[variable] ?? fallback;
+    cacheSet(seriesDomainCache, key, vpDomain);
+    return vpDomain;
   }
 
   const series = getAggregatedSeries(cell, metadata, state, variable);
   const domain = toExactSeriesDomain(series, fallback);
-  seriesDomainCache.set(key, domain);
+  cacheSet(seriesDomainCache, key, domain);
   return domain;
 }
 
@@ -303,20 +359,20 @@ export function buildCellSummary(cell, metadata, state, domainOverrides = {}) {
     selectedDomain,
     headline
   };
-  cellSummaryCache.set(cacheKey, summary);
+  cacheSet(cellSummaryCache, cacheKey, summary);
   return summary;
 }
 
 export function buildRenderableCells(cells, metadata, state, domainOverrides = {}) {
-  const cacheKey = `${state.mode}|${state.variable}|${state.densityLevel}|${getWindowStateKey(metadata, state)}|${state.displayedH3Resolution ?? ''}|${buildDomainCacheKey(domainOverrides)}`;
+  const cacheKey = `${state.mode}|${state.variable}|${getWindowStateKey(metadata, state)}|${buildDomainCacheKey(domainOverrides)}|${cells.length}|${cells[0]?.id ?? ''}`;
   if (renderableCellsCache.has(cacheKey)) {
     return renderableCellsCache.get(cacheKey);
   }
 
-  const renderable = filterCellsForDensity(cells, state.densityLevel).map((cell) => ({
+  const renderable = cells.map((cell) => ({
     ...cell,
     summary: buildCellSummary(cell, metadata, state, domainOverrides)
   }));
-  renderableCellsCache.set(cacheKey, renderable);
+  cacheSet(renderableCellsCache, cacheKey, renderable, 64);
   return renderable;
 }
