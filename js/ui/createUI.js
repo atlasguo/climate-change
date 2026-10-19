@@ -1295,10 +1295,6 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       );
     });
     context.globalAlpha = 1;
-    const labelCanvas = root.querySelector('.label-map canvas.maplibregl-canvas');
-    if (labelCanvas) {
-      context.drawImage(labelCanvas, 0, 0, output.width, output.height);
-    }
 
     await downloadCanvas(output, 'climate-map');
   }

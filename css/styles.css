@@ -2463,19 +2463,6 @@ input[type='range'] {
   display: block;
 }
 
-
-/* Transparent place-name map stacked above the glyph overlay. */
-.label-map {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  pointer-events: none;
-}
-
-.label-map .maplibregl-canvas {
-  pointer-events: none;
-}
-
 /* Collapsed attribution shows only the (i) button. */
 .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
   padding: 0;
