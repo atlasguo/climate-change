@@ -3,6 +3,7 @@ import { cellToBoundary, cellToChildren, getRes0Cells, latLngToCell } from 'h3-j
 import { buildRenderableCells, getCommittedValueDomains, getDensityLevelForZoom } from '../state/selectors.js';
 import { getDisplayCell, getGridCellIdAt, getGridDisplayCells, getGridIndexes, getH3DisplayCells } from '../data/displayCells.js';
 import { createGlyphOverlay } from './createGlyphOverlay.js';
+import { applyBasemap, BASEMAPS } from './basemaps.js';
 
 const H3_SOURCE_ID = 'climate-h3-cells';
 const H3_FILL_LAYER_ID = 'climate-h3-fill';
@@ -1288,6 +1289,59 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
 
   map.addControl(new GlobeControls(), 'top-right');
 
+  // Temporary control for comparing basemap candidates; remove once one is chosen.
+  const BASEMAP_STORAGE_KEY = 'ccv-basemap-preview';
+  let activeBasemap = 'minimal';
+  try {
+    activeBasemap = window.localStorage.getItem(BASEMAP_STORAGE_KEY) ?? 'minimal';
+  } catch {
+    activeBasemap = 'minimal';
+  }
+
+  class BasemapPreviewControl {
+    onAdd() {
+      const wrapper = document.createElement('fieldset');
+      wrapper.className = 'maplibregl-ctrl basemap-preview';
+      wrapper.innerHTML = `
+        <legend class="basemap-preview__title">Basemap (preview)</legend>
+        ${BASEMAPS.map((item) => `
+          <label class="basemap-preview__option" title="${item.description}">
+            <input type="radio" name="basemap-preview" value="${item.id}" ${item.id === activeBasemap ? 'checked' : ''} />
+            <span>${item.label}</span>
+          </label>
+        `).join('')}
+        <p class="basemap-preview__status" data-basemap-status role="status" aria-live="polite"></p>
+      `;
+      const status = wrapper.querySelector('[data-basemap-status]');
+      wrapper.addEventListener('change', async (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement) || input.name !== 'basemap-preview') {
+          return;
+        }
+        status.textContent = 'Loading…';
+        try {
+          activeBasemap = await applyBasemap(map, input.value, H3_FILL_LAYER_ID);
+          status.textContent = '';
+          try {
+            window.localStorage.setItem(BASEMAP_STORAGE_KEY, activeBasemap);
+          } catch {
+            // Remembering the choice is optional.
+          }
+        } catch (error) {
+          status.textContent = error.message || 'Basemap failed to load.';
+        }
+      });
+      this._container = wrapper;
+      return wrapper;
+    }
+
+    onRemove() {
+      this._container?.remove();
+    }
+  }
+
+  map.addControl(new BasemapPreviewControl(), 'bottom-left');
+
   let latestVisibleCellIds = new Set();
   const glyphOverlay = createGlyphOverlay({
     map,
@@ -1704,6 +1758,9 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     currentH3Resolution = getAdaptiveH3Resolution(map, metadata, currentDensityLevel);
     currentGridDegrees = getAdaptiveGridDegrees(map, currentDensityLevel);
     addGeometryLayers(map, currentH3Resolution, currentGridDegrees);
+    if (activeBasemap !== 'minimal') {
+      applyBasemap(map, activeBasemap, H3_FILL_LAYER_ID).catch(() => applyBasemap(map, 'minimal'));
+    }
     void addReferenceLabelLayers(map, currentAppState).then(() => liftInteractiveCellLayers(map));
     setUnitLayerVisibility(map, currentUnit);
     applyDisplayedGeometry();

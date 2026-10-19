@@ -1926,3 +1926,48 @@ input[type='range'] {
 .timeline-handle:focus-visible .timeline-handle__tag {
   box-shadow: 0 0 0 2px #0e0e0f, 0 0 0 4px var(--focus-ring);
 }
+
+/* Temporary basemap comparison control. */
+.basemap-preview {
+  margin: 0 0 10px 10px;
+  padding: 8px 10px 6px;
+  border: 1px solid rgba(167, 173, 179, 0.24);
+  border-radius: var(--radius-card);
+  background: rgba(14, 16, 19, 0.9);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  backdrop-filter: blur(12px);
+}
+
+.basemap-preview__title {
+  padding: 0;
+  margin-bottom: 4px;
+  color: #a3aab0;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.basemap-preview__option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.basemap-preview__option input {
+  margin: 0;
+  accent-color: #cfd3d7;
+}
+
+.basemap-preview__status:empty {
+  display: none;
+}
+
+.basemap-preview__status {
+  margin: 4px 0 0;
+  color: #a3aab0;
+}
