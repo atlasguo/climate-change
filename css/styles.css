@@ -1356,6 +1356,13 @@ input[type='range'] {
   gap: 7px;
 }
 
+.legend__note {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
 .detail-chart__legend .legend__controls {
   margin-top: 6px;
 }

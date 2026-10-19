@@ -1639,12 +1639,15 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
                 : state.colorScaleMode === 'viewport'
                   ? viewportDomains.value
                   : globalValueDomains;
+            // Cone charts encode values by color only, so the value-axis scale does not apply.
+            const isConeChart = (state.mode ?? 'pulse') === 'ring';
             legend.innerHTML = buildLegendMarkup(
               state.variable ?? 'temperature',
               cachedTrendMode,
               legendDomainOverrides,
-              true,
-              state.chartValueScaleMode ?? 'local'
+              !isConeChart,
+              state.chartValueScaleMode ?? 'local',
+              isConeChart ? 'Cone charts show values by color only. Change the range with Color scale in the left panel.' : ''
             );
           }
           hideDetailChartHover();

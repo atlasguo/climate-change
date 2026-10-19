@@ -121,7 +121,8 @@ export function buildLegendMarkup(
   trendMode,
   domainOverrides = {},
   showValueScaleToggle = false,
-  chartValueScaleMode = 'local'
+  chartValueScaleMode = 'local',
+  note = ''
 ) {
   const palette = paletteForVariable(variable);
   const domain = domainForVariable(variable, trendMode, domainOverrides);
@@ -150,6 +151,7 @@ export function buildLegendMarkup(
           </fieldset>
         </div>
       ` : ''}
+      ${note ? `<p class="legend__note">${note}</p>` : ''}
     </div>
   `;
 }
