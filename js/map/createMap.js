@@ -85,14 +85,13 @@ function syncLabelLayerVisibility(map, state) {
   }
 }
 
-// Borders and place names sit above the data cells; hover and selection outlines go between them.
+// Borders sit above the data cells; hover and selection outlines are drawn on top of them.
 function addReferenceLayers(map, state, theme) {
   for (const layer of buildReferenceLayers(theme)) {
-    if (!map.getLayer(layer.id)) {
+    if (!map.getLayer(layer.id) && !REFERENCE_LABEL_LAYERS.includes(layer.id)) {
       map.addLayer(layer);
     }
   }
-  const firstLabelLayer = REFERENCE_LABEL_LAYERS[0];
   for (const layerId of [
     H3_HOVERED_FILL_LAYER_ID,
     GRID_HOVERED_FILL_LAYER_ID,
@@ -104,10 +103,47 @@ function addReferenceLayers(map, state, theme) {
     GRID_SELECTED_LAYER_ID
   ]) {
     if (map.getLayer(layerId)) {
-      map.moveLayer(layerId, firstLabelLayer);
+      map.moveLayer(layerId);
     }
   }
-  syncLabelLayerVisibility(map, state);
+}
+
+// Place names are drawn by a second, transparent map stacked above the glyph overlay so that
+// labels sit on top of the symbols. It mirrors the main map camera and ignores pointer input.
+function createLabelMap(container, style, mainMap, theme) {
+  const host = document.createElement('div');
+  host.className = 'label-map';
+  host.setAttribute('aria-hidden', 'true');
+  container.append(host);
+  const labelMap = new maplibregl.Map({
+    container: host,
+    style: {
+      version: 8,
+      glyphs: style.glyphs,
+      projection: { type: 'globe' },
+      sources: { openmaptiles: style.sources.openmaptiles },
+      layers: buildReferenceLayers(theme).filter((layer) => REFERENCE_LABEL_LAYERS.includes(layer.id))
+    },
+    center: mainMap.getCenter(),
+    zoom: mainMap.getZoom(),
+    interactive: false,
+    attributionControl: false,
+    canvasContextAttributes: { preserveDrawingBuffer: true }
+  });
+  const sync = () => {
+    labelMap.jumpTo({
+      center: mainMap.getCenter(),
+      zoom: mainMap.getZoom(),
+      bearing: mainMap.getBearing(),
+      pitch: mainMap.getPitch()
+    });
+  };
+  mainMap.on('move', sync);
+  mainMap.on('resize', () => {
+    labelMap.resize();
+    sync();
+  });
+  return labelMap;
 }
 
 function buildOverlayState(rawCells, metadata, state, densityLevel, h3Resolution, gridDegrees, viewportDomains = null) {
@@ -735,7 +771,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
   style.glyphs = `${new URL('../../assets/glyphs/', import.meta.url).href}{fontstack}/{range}.pbf`;
   const map = new maplibregl.Map({
     container,
-    style,
+    style: structuredClone(style),
     center: initialView.center,
     zoom: initialView.zoom,
     minZoom: initialView.zoom,
@@ -1004,6 +1040,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
         try {
           activeBasemap = await applyBasemap(map, input.value, H3_FILL_LAYER_ID, getTheme());
           applyReferenceTheme(map, getBasemapTheme(activeBasemap, getTheme()));
+          if (labelMap) applyReferenceTheme(labelMap, getBasemapTheme(activeBasemap, getTheme()));
           status.textContent = '';
           try {
             window.localStorage.setItem(BASEMAP_STORAGE_KEY, activeBasemap);
@@ -1084,6 +1121,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
   let lastPointerEvent = null;
   let displayedGeometryKey = null;
   let mapReady = false;
+  let labelMap = null;
 
   function usesViewportScale(state = currentAppState) {
     return state.colorScaleMode === 'viewport' || state.chartValueScaleMode === 'viewport';
@@ -1482,6 +1520,8 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     addGeometryLayers(map, currentH3Resolution, currentGridDegrees);
     applyBasemap(map, activeBasemap, H3_FILL_LAYER_ID, getTheme()).catch(() => applyBasemap(map, 'minimal', H3_FILL_LAYER_ID, getTheme()));
     addReferenceLayers(map, currentAppState, getBasemapTheme(activeBasemap, getTheme()));
+    labelMap = createLabelMap(container, style, map, getBasemapTheme(activeBasemap, getTheme()));
+    labelMap.once('load', () => syncLabelLayerVisibility(labelMap, currentAppState));
     applyCellLayerTheme();
     mapReady = true;
     setUnitLayerVisibility(map, currentUnit);
@@ -1636,6 +1676,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
       activeBasemap = await applyBasemap(map, 'minimal', H3_FILL_LAYER_ID, getTheme());
     }
     applyReferenceTheme(map, getBasemapTheme(activeBasemap, getTheme()));
+    if (labelMap) applyReferenceTheme(labelMap, getBasemapTheme(activeBasemap, getTheme()));
   }
 
   const CONTENT_CHANGE_KEYS = new Set([
@@ -1660,7 +1701,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
         changedKey === 'showLabels' ||
         changedKey === 'init'
       ) {
-        syncLabelLayerVisibility(map, state);
+        if (labelMap) syncLabelLayerVisibility(labelMap, state);
       }
 
       if (changedKey === 'symbolOpacity') {
