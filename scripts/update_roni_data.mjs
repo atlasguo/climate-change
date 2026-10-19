@@ -9,7 +9,7 @@ const FIRST_YEAR = 1950;
 const LAST_MONTH_LABEL = '2025-12'; // Project period is fixed at 1940-01..2025-12.
 const MIN_POINTS = 800;
 const FETCH_TIMEOUT_MS = 30000;
-const USER_AGENT = 'climate-change-visualized RONI updater (static research site)';
+const USER_AGENT = 'climate-change RONI updater (static research site)';
 
 function buildMonthLabel(year, month) {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;

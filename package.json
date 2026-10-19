@@ -1,5 +1,5 @@
 {
-  "name": "climate-change-visualized",
+  "name": "climate-change",
   "private": true,
   "version": "0.2.0",
   "description": "A globe-first climate visualization built as a static HTML, CSS and JavaScript site.",
