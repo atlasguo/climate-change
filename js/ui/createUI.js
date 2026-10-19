@@ -13,6 +13,8 @@ import {
 } from '../scales/climateScales.js';
 import { buildBarRects, buildBucketRingSlices, buildLinePoints, zeroLineY } from '../scales/chartRenderers.js';
 import { getDisplayCell } from '../data/displayCells.js';
+import { cellToBoundary, getResolution, latLngToCell } from 'h3-js';
+import { dominantPlace } from '../data/placeLookup.js';
 import { getTheme, setTheme, themeColor } from '../theme.js';
 
 
@@ -482,22 +484,68 @@ function axisTitles(variable) {
     : { raw: 'Precipitation (mm/month)', anomaly: 'Anomaly (%)' };
 }
 
-function computeSeriesStats(series) {
-  const finite = series.filter((value) => Number.isFinite(value));
-  if (!finite.length) {
-    return {
-      min: NaN,
-      max: NaN,
-      mean: NaN
-    };
-  }
+const PLACE_SAMPLES = 12;
 
-  const total = finite.reduce((sum, value) => sum + value, 0);
-  return {
-    min: Math.min(...finite),
-    max: Math.max(...finite),
-    mean: total / finite.length
-  };
+// Sample points on a regular lat-lon lattice inside the cell (grid box or H3 hexagon).
+function cellSamplePoints(cell) {
+  let bounds = cell.gridBounds;
+  let inside = () => true;
+  if (!bounds && cell.h3Index) {
+    const boundary = cellToBoundary(cell.h3Index);
+    const lats = boundary.map(([lat]) => lat);
+    const lons = boundary.map(([, lon]) => lon);
+    if (Math.max(...lons) - Math.min(...lons) > 180) {
+      return [{ lat: cell.lat, lon: cell.lon }];
+    }
+    bounds = { south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lons), east: Math.max(...lons) };
+    const resolution = getResolution(cell.h3Index);
+    inside = (lat, lon) => latLngToCell(lat, lon, resolution) === cell.h3Index;
+  }
+  if (!bounds) {
+    return [{ lat: cell.lat, lon: cell.lon }];
+  }
+  const points = [];
+  for (let row = 0; row < PLACE_SAMPLES; row += 1) {
+    const lat = bounds.south + ((row + 0.5) / PLACE_SAMPLES) * (bounds.north - bounds.south);
+    for (let column = 0; column < PLACE_SAMPLES; column += 1) {
+      const lon = bounds.west + ((column + 0.5) / PLACE_SAMPLES) * (bounds.east - bounds.west);
+      if (inside(lat, lon)) {
+        points.push({ lat, lon });
+      }
+    }
+  }
+  return points.length ? points : [{ lat: cell.lat, lon: cell.lon }];
+}
+
+const placeNameCache = new Map();
+
+function cellPlaceName(cell) {
+  if (!placeNameCache.has(cell.id)) {
+    const name = dominantPlace(cellSamplePoints(cell));
+    if (name === null) {
+      return null;
+    }
+    placeNameCache.set(cell.id, name);
+  }
+  return placeNameCache.get(cell.id);
+}
+
+const RECENT_MONTHS = 120;
+
+// Mean anomaly over the last ten years of data, independent of the selected range.
+function recentMean(series) {
+  if (!series?.length) {
+    return NaN;
+  }
+  let total = 0;
+  let count = 0;
+  for (let index = Math.max(0, series.length - RECENT_MONTHS); index < series.length; index += 1) {
+    if (Number.isFinite(series[index])) {
+      total += series[index];
+      count += 1;
+    }
+  }
+  return count ? total / count : NaN;
 }
 
 function monthNumberFromLabel(label) {
@@ -814,6 +862,7 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
         </svg>
         <div class="detail-chart__legend" data-legend></div>
         <div class="detail-chart__crosshair" data-detail-chart-line hidden></div>
+        <div class="detail-chart__dot" data-detail-chart-dot hidden></div>
         <div class="detail-chart__hover" data-detail-chart-hover hidden></div>
       </div>
     `
@@ -858,6 +907,27 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   const mobilePeek = root.querySelector('[data-mobile-peek]');
   const mobilePeekText = root.querySelector('[data-mobile-peek-text]');
   const mobileQuery = window.matchMedia('(max-width: 1024px)');
+  // Pin the sheet panels to the bar's real height so nothing shows between them.
+  const mobileSheet = root.querySelector('.mobile-sheet');
+  if (mobileSheet && 'ResizeObserver' in window) {
+    new ResizeObserver(() => {
+      const height = mobileSheet.offsetHeight;
+      if (height) document.documentElement.style.setProperty('--sheet-bar', `${height}px`);
+      else document.documentElement.style.removeProperty('--sheet-bar');
+    }).observe(mobileSheet);
+  }
+
+  // On phones the data sources and copyright move to the end of the "Map" tab.
+  const metaSection = root.querySelector('.panel-section--meta');
+  const metaHome = metaSection?.parentElement;
+  const mobileMapPanel = root.querySelector('[data-mobile-map-slot]');
+  const placeMetaSection = () => {
+    if (!metaSection || !metaHome || !mobileMapPanel) return;
+    const target = mobileQuery.matches ? mobileMapPanel : metaHome;
+    if (metaSection.parentElement !== target) target.append(metaSection);
+  };
+  placeMetaSection();
+  mobileQuery.addEventListener('change', placeMetaSection);
   let currentDetailChartModel = null;
   const lookupCell = (id) => (id == null ? null : getDisplayCell(id) ?? null);
   const defaultDetailCell = () => lookupCell('global') ?? globalCell;
@@ -1299,6 +1369,60 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     await downloadCanvas(output, 'climate-map');
   }
 
+  // Copies the pinned crosshair and readout from the page onto the export canvas.
+  function drawLockedHover(context, svg, scale) {
+    const origin = svg.getBoundingClientRect();
+    const box = (element) => {
+      const rect = element.getBoundingClientRect();
+      return [(rect.left - origin.left) * scale, (rect.top - origin.top) * scale, rect.width * scale, rect.height * scale];
+    };
+    const line = detailChart.querySelector('[data-detail-chart-line]');
+    if (line && !line.hidden) {
+      const [x, y, , h] = box(line);
+      const colors = getComputedStyle(line).backgroundImage.match(/rgba?\([^)]*\)/g) ?? [];
+      context.fillStyle = colors[1] ?? colors[0] ?? 'rgba(128, 128, 128, 0.6)';
+      context.fillRect(x, y, Math.max(1, scale), h);
+    }
+    const dot = detailChart.querySelector('[data-detail-chart-dot]');
+    if (dot && !dot.hidden) {
+      const dotStyle = getComputedStyle(dot);
+      const [x, y, w, h] = box(dot);
+      context.beginPath();
+      context.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2);
+      context.fillStyle = dotStyle.backgroundColor;
+      context.fill();
+      context.lineWidth = (parseFloat(dotStyle.borderTopWidth) || 0) * scale;
+      context.strokeStyle = dotStyle.borderTopColor;
+      if (context.lineWidth) {
+        context.stroke();
+      }
+    }
+    const hover = detailChart.querySelector('[data-detail-chart-hover]');
+    if (!hover || hover.hidden) {
+      return;
+    }
+    const style = getComputedStyle(hover);
+    const [x, y, w, h] = box(hover);
+    const radius = (parseFloat(style.borderTopLeftRadius) || 0) * scale;
+    context.beginPath();
+    context.roundRect(x, y, w, h, radius);
+    context.fillStyle = style.backgroundColor;
+    context.fill();
+    if (parseFloat(style.borderTopWidth)) {
+      context.lineWidth = parseFloat(style.borderTopWidth) * scale;
+      context.strokeStyle = style.borderTopColor;
+      context.stroke();
+    }
+    context.textBaseline = 'middle';
+    for (const child of hover.children) {
+      const childStyle = getComputedStyle(child);
+      const [cx, cy, , ch] = box(child);
+      context.font = `${childStyle.fontWeight} ${parseFloat(childStyle.fontSize) * scale}px ${childStyle.fontFamily}`;
+      context.fillStyle = childStyle.color;
+      context.fillText(child.textContent, cx, cy + ch / 2);
+    }
+  }
+
   async function exportChartPng() {
     const svg = detailChart?.querySelector('.detail-chart__svg');
     if (!(svg instanceof SVGSVGElement)) {
@@ -1318,6 +1442,9 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       return;
     }
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    if (detailChartLocked) {
+      drawLockedHover(context, svg, pixelRatio * (width / svg.getBoundingClientRect().width));
+    }
     await downloadCanvas(canvas, 'climate-chart');
   }
 
@@ -1341,6 +1468,18 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     if (line) {
       line.hidden = true;
     }
+    const dot = detailChart.querySelector('[data-detail-chart-dot]');
+    if (dot) {
+      dot.hidden = true;
+    }
+    detailChart.querySelector('[data-detail-chart-outline]')?.remove();
+    detailChartLocked = false;
+    detailChart.classList.remove('is-locked');
+  }
+
+  // The chart SVG is smaller than its frame (legend below it), so map coordinates against the SVG.
+  function detailChartPlotRect(frame) {
+    return (frame.querySelector('svg') ?? frame).getBoundingClientRect();
   }
 
   function resolveDetailChartHit(pointerX, pointerY) {
@@ -1353,7 +1492,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       return null;
     }
 
-    const rect = frame.getBoundingClientRect();
+    const rect = detailChartPlotRect(frame);
     if (!rect.width || !rect.height) {
       return null;
     }
@@ -1380,6 +1519,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       return {
         anchorX: currentDetailChartModel.cx + Math.cos(midAngle) * midRadius,
         anchorY: currentDetailChartModel.cy + Math.sin(midAngle) * midRadius,
+        index: ringIndex,
         label: currentDetailChartModel.labels[ringIndex],
         value: currentDetailChartModel.values[ringIndex],
         rawValue: currentDetailChartModel.rawValues?.[ringIndex]
@@ -1415,6 +1555,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     }
 
     return {
+      index,
       anchorX: point.x,
       anchorY: point.y,
       label: currentDetailChartModel.labels[index],
@@ -1423,8 +1564,59 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     };
   }
 
+  // A click pins the hover readout (it is then also drawn into the chart export); another click or a click elsewhere releases it.
+  let detailChartLocked = false;
+
+  // Column and Cone charts frame the hovered bar or cone piece inside the SVG (so exports keep it);
+  // returns false for Pulse, which marks the point with a dot instead.
+  function updateDetailChartOutline(event, hit) {
+    const svg = detailChart.querySelector('.detail-chart__svg');
+    let target = null;
+    if (currentDetailChartModel.type === 'cartesian-bar') {
+      target = svg?.querySelector(`[data-bar-index="${hit.index}"]`);
+    } else if (currentDetailChartModel.type === 'ring') {
+      const under = document.elementsFromPoint(event.clientX, event.clientY).find((element) => element.matches?.('[data-ring-index]'));
+      target = under?.dataset.ringIndex === String(hit.index) ? under : svg?.querySelector(`[data-ring-index="${hit.index}"]`);
+    }
+    let outline = svg?.querySelector('[data-detail-chart-outline]');
+    if (!target) {
+      outline?.remove();
+      return false;
+    }
+    if (!outline || outline.tagName !== target.tagName) {
+      outline?.remove();
+      outline = target.cloneNode(false);
+      outline.setAttribute('data-detail-chart-outline', '');
+      outline.removeAttribute('data-bar-index');
+      outline.removeAttribute('data-ring-index');
+      outline.setAttribute('fill', 'none');
+      outline.setAttribute('stroke', themeColor('chartStrongText'));
+      // Same on-screen weight as the Pulse dot ring, whatever the chart's scale.
+      outline.setAttribute('stroke-width', '1.6');
+      outline.setAttribute('vector-effect', 'non-scaling-stroke');
+      outline.setAttribute('stroke-linejoin', 'round');
+      outline.setAttribute('pointer-events', 'none');
+      svg.append(outline);
+    }
+    for (const name of ['x', 'y', 'width', 'height', 'd', 'transform']) {
+      const value = target.getAttribute(name);
+      if (value === null) {
+        outline.removeAttribute(name);
+      } else {
+        outline.setAttribute(name, value);
+      }
+    }
+    // The outline lives at the SVG root, so carry over any transform from the shape's parent groups.
+    const parentMatrix = target.parentNode?.getCTM?.() && svg.getCTM?.() ? svg.getCTM().inverse().multiply(target.parentNode.getCTM()) : null;
+    if (parentMatrix && !parentMatrix.isIdentity) {
+      const { a, b, c, d, e, f } = parentMatrix;
+      outline.setAttribute('transform', `matrix(${a} ${b} ${c} ${d} ${e} ${f})`);
+    }
+    return true;
+  }
+
   function updateDetailChartHover(event) {
-    if (!detailChart) {
+    if (!detailChart || detailChartLocked) {
       return;
     }
     const hit = resolveDetailChartHit(event.clientX, event.clientY);
@@ -1436,14 +1628,24 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       return;
     }
 
-    const rect = frame.getBoundingClientRect();
-    const anchorLeft = (hit.anchorX / currentDetailChartModel.width) * rect.width;
-    const anchorTop = (hit.anchorY / currentDetailChartModel.height) * rect.height;
+    const frameRect = frame.getBoundingClientRect();
+    const rect = detailChartPlotRect(frame);
+    const offsetLeft = rect.left - frameRect.left;
+    const offsetTop = rect.top - frameRect.top;
+    const anchorLeft = offsetLeft + (hit.anchorX / currentDetailChartModel.width) * rect.width;
+    const anchorTop = offsetTop + (hit.anchorY / currentDetailChartModel.height) * rect.height;
     const variable = store.getState().variable ?? 'temperature';
 
     hover.hidden = false;
     hover.style.left = `${anchorLeft}px`;
     hover.style.top = `${anchorTop}px`;
+    const dot = detailChart.querySelector('[data-detail-chart-dot]');
+    const outlined = updateDetailChartOutline(event, hit);
+    if (dot) {
+      dot.hidden = outlined;
+      dot.style.left = `${anchorLeft}px`;
+      dot.style.top = `${anchorTop}px`;
+    }
     hover.innerHTML = `
       <span>${escapeHtml(hit.label)}</span>
       <strong>${escapeHtml(formatDetailHoverValue(variable, hit.value))}</strong>
@@ -1455,7 +1657,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       return;
     }
 
-    const lineTop = (currentDetailChartModel.top / currentDetailChartModel.height) * rect.height;
+    const lineTop = offsetTop + (currentDetailChartModel.top / currentDetailChartModel.height) * rect.height;
     const lineHeight = (currentDetailChartModel.chartHeight / currentDetailChartModel.height) * rect.height;
     line.hidden = false;
     line.style.left = `${anchorLeft}px`;
@@ -1464,7 +1666,33 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   }
 
   detailChart?.addEventListener('pointermove', updateDetailChartHover);
-  detailChart?.addEventListener('pointerleave', hideDetailChartHover);
+  detailChart?.addEventListener('pointerleave', () => {
+    if (!detailChartLocked) {
+      hideDetailChartHover();
+    }
+  });
+  detailChart?.addEventListener('click', (event) => {
+    if (detailChartLocked) {
+      hideDetailChartHover();
+      updateDetailChartHover(event);
+      return;
+    }
+    updateDetailChartHover(event);
+    if (!detailChart.querySelector('[data-detail-chart-hover]')?.hidden) {
+      detailChartLocked = true;
+      detailChart.classList.add('is-locked');
+    }
+  });
+  document.addEventListener('click', (event) => {
+    // The export buttons and the download link they click keep the pin in place.
+    const keepsPin = detailChart?.contains(event.target)
+      || exportChartButton?.contains(event.target)
+      || exportMapButton?.contains(event.target)
+      || event.target?.matches?.('a[download]');
+    if (detailChartLocked && !keepsPin) {
+      hideDetailChartHover();
+    }
+  });
   detailChart?.addEventListener('pointercancel', hideDetailChartHover);
 
   const rightPanel = root.querySelector('.panel--right');
@@ -1689,8 +1917,8 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       if (previewCell) {
         const viewportDomains = resolveViewportDomains(state);
         const summary = buildCellSummary(previewCell, metadata, state);
-        const detailSeries = getAggregatedSeries(previewCell, metadata, state, summary.variable);
-        const detailStats = computeSeriesStats(detailSeries);
+        const recentTemperature = recentMean(previewCell.tempSeries);
+        const recentPrecipitation = recentMean(previewCell.precipSeries) * 100;
         const anchor = previewCell === selectedCell ? state.selectedAnchor : null;
         const locationLabel = 'Location';
         const locationValue = previewCell.isGlobal
@@ -1698,31 +1926,26 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
           : anchor
             ? formatLatLon(anchor.lat, anchor.lon)
             : formatLatLon(previewCell.lat, previewCell.lon);
+        const placeName = previewCell.isGlobal ? 'Whole globe' : cellPlaceName(previewCell);
+        const recentYears = `${metadata.latestMonth.slice(0, 4) - RECENT_MONTHS / 12 + 1}–${metadata.latestMonth.slice(0, 4)}`;
+        const recentNote = `Last 10 years (${recentYears}) vs WMO Climate Normals`;
+        const baselineRange = `(${metadata.baselineStart.slice(0, 4)}–${metadata.baselineEnd.slice(0, 4)})`;
+        const detailTile = (label, value) => `<div><span>${label}</span><strong>${value}</strong></div>`;
+        const recentValue = summary.variable === 'temperature' ? recentTemperature : recentPrecipitation;
         if (detailSummary) {
           detailSummary.innerHTML = `
             <div class="detail-grid detail-grid--summary">
-              <div>
-                <span>${locationLabel}</span>
-                <strong>${locationValue}</strong>
-              </div>
-              <div>
-                <span>Average</span>
-                <strong>${formatDetailStatValue(summary.variable, detailStats.mean)}</strong>
-              </div>
-              <div>
-                <span>Highest</span>
-                <strong>${formatDetailStatValue(summary.variable, detailStats.max)}</strong>
-              </div>
-              <div>
-                <span>Lowest</span>
-                <strong>${formatDetailStatValue(summary.variable, detailStats.min)}</strong>
-              </div>
+              ${detailTile(locationLabel, locationValue)}
+              ${detailTile('Country or sea', escapeHtml(placeName ?? '—'))}
+              ${detailTile('Temperature', formatDetailStatValue('temperature', recentTemperature))}
+              ${detailTile('Precipitation', formatDetailStatValue('precipitation', recentPrecipitation))}
             </div>
+            <p class="detail-note">${recentNote} <span class="detail-note__tail">${baselineRange} <a class="timeline-toggle__help" href="https://community.wmo.int/site/knowledge-hub/programmes-and-initiatives/climate-services/wmo-climatological-normals" target="_blank" rel="noopener noreferrer" title="What are WMO Climate Normals?" aria-label="What are WMO Climate Normals?">?</a></span></p>
           `;
         }
 
         if (mobilePeekText) {
-          mobilePeekText.textContent = `${previewCell.isGlobal ? 'Global average' : locationValue} · ${formatDetailStatValue(summary.variable, detailStats.mean)}`;
+          mobilePeekText.textContent = `${previewCell.isGlobal ? 'Global average' : locationValue} · ${formatDetailStatValue(summary.variable, recentValue)}`;
         }
         if (changedKey === 'selectedCell' && state.selectedCell && mobileQuery.matches) {
           setMobileSheet(true, 'details');
@@ -1730,7 +1953,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
 
         if (selectionAnnouncer && changedKey === 'selectedCell') {
           selectionAnnouncer.textContent = previewCell === selectedCell
-            ? `Selected ${previewCell.isGlobal ? 'global average' : locationValue}. Average ${formatDetailStatValue(summary.variable, detailStats.mean)}.`
+            ? `Selected ${previewCell.isGlobal ? 'global average' : locationValue}. Last 10 years ${formatDetailStatValue(summary.variable, recentValue)}.`
             : 'Selection cleared. Showing the global average.';
         }
 

@@ -88,10 +88,6 @@ export function getDisplayCell(id) {
   return id == null ? null : registry.get(id) ?? null;
 }
 
-export function findNearestSample(lat, lon) {
-  return context?.findNearest(lat, lon) ?? null;
-}
-
 function rememberLevel(key, cells) {
   levelCache.set(key, cells);
   for (const cell of cells) {

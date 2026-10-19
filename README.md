@@ -2,6 +2,8 @@
 
 Interactive 3D globe of monthly temperature and precipitation anomalies, 1940 to 2025.
 
+Live site: <https://cartoguophy.com/climate-change/>
+
 Each hexagon or grid cell carries a small chart glyph showing how its climate has changed against the 1991-2020 baseline. A timeline lets you compare periods, with El Niño and La Niña years marked for context. The map works in dark and light modes, on desktop and on phones.
 
 ## Features

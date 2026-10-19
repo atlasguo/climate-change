@@ -14,7 +14,7 @@ BACKGROUND = (2, 7, 11, 255)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate favicon option 4 from the loading ring geometry and palette extremes."
+        description="Generate the favicon from the loading ring geometry and palette extremes."
     )
     parser.add_argument(
         "--palette-config",
@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("assets/favicons/favicon-option4.png"),
+        default=Path("assets/favicons/favicon.png"),
         help="Output PNG path.",
     )
     parser.add_argument(
@@ -39,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=3,
         help="Supersampling factor for smooth edges.",
+    )
+    parser.add_argument(
+        "--transparent",
+        action="store_true",
+        help="Render the ring on a transparent background without the rounded square.",
     )
     return parser.parse_args()
 
@@ -142,8 +147,12 @@ def composite(bg: tuple[int, int, int, int], fg: tuple[float, float, float, floa
     )
 
 
-def render(size: int, conic_stops: list[tuple[float, tuple[int, int, int, int]]]) -> Image.Image:
-    image = Image.new("RGBA", (size, size), BACKGROUND)
+def render(
+    size: int,
+    conic_stops: list[tuple[float, tuple[int, int, int, int]]],
+    background: tuple[int, int, int, int] = BACKGROUND,
+) -> Image.Image:
+    image = Image.new("RGBA", (size, size), background)
     pixels = image.load()
 
     cx = cy = (size - 1) / 2.0
@@ -165,7 +174,7 @@ def render(size: int, conic_stops: list[tuple[float, tuple[int, int, int, int]]]
 
             angle = (math.atan2(dy, dx) + math.pi / 2.0) / (2.0 * math.pi)
             fg = sample_conic(conic_stops, angle)
-            pixels[x, y] = composite(BACKGROUND, fg, ring_alpha)
+            pixels[x, y] = composite(background, fg, ring_alpha)
 
     return image
 
@@ -174,10 +183,12 @@ def main() -> None:
     args = parse_args()
     conic_stops = load_conic_stops(args.palette_config)
     work_size = max(64, args.size * max(1, args.supersample))
-    image = render(work_size, conic_stops)
+    background = (0, 0, 0, 0) if args.transparent else BACKGROUND
+    image = render(work_size, conic_stops, background)
     if work_size != args.size:
         image = image.resize((args.size, args.size), Image.Resampling.LANCZOS)
-    image = apply_rounded_corners(image)
+    if not args.transparent:
+        image = apply_rounded_corners(image)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     image.save(args.output, format="PNG")
     print(f"Saved {args.output} ({args.size}x{args.size})")

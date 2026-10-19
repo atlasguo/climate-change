@@ -77,6 +77,7 @@ const SHELL = `
     <aside class="panel panel--left" id="panel-style" data-panel="controls" aria-label="Controls">
       <section class="panel-section panel-section--title">
         <div class="title-block">
+          <img class="title-logo" src="assets/branding/logo-ring.png" alt="" width="26" height="26" />
           <h1 class="panel-title" data-bind="app-title">Climate Change Visualized</h1>
         </div>
       </section>
@@ -147,23 +148,23 @@ const SHELL = `
           <div class="opacity-control">
             <label class="opacity-control__label" for="symbol-size-slider">
               <span id="symbol-size-label">Size</span>
-              <span data-bind="symbol-size-value">40%</span>
+              <span data-bind="symbol-size-value">50%</span>
             </label>
-            <input class="opacity-control__slider" type="range" min="0" max="100" step="1" value="40" id="symbol-size-slider" aria-labelledby="symbol-size-label" data-symbol-size />
+            <input class="opacity-control__slider" type="range" min="0" max="100" step="1" value="50" id="symbol-size-slider" aria-labelledby="symbol-size-label" data-symbol-size />
           </div>
           <div class="opacity-control">
             <label class="opacity-control__label" for="symbol-opacity-slider">
               <span id="symbol-opacity-label">Opacity</span>
-              <span data-bind="symbol-opacity-value">90%</span>
+              <span data-bind="symbol-opacity-value">85%</span>
             </label>
-            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="90" id="symbol-opacity-slider" aria-labelledby="symbol-opacity-label" data-symbol-opacity />
+            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="85" id="symbol-opacity-slider" aria-labelledby="symbol-opacity-label" data-symbol-opacity />
           </div>
           <div class="opacity-control">
             <label class="opacity-control__label" for="symbol-stroke-slider">
-              <span id="symbol-stroke-label">Cell outline</span>
-              <span data-bind="symbol-stroke-value">10%</span>
+              <span id="symbol-stroke-label">Outline</span>
+              <span data-bind="symbol-stroke-value">85%</span>
             </label>
-            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="10" id="symbol-stroke-slider" aria-labelledby="symbol-stroke-label" data-symbol-stroke />
+            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="85" id="symbol-stroke-slider" aria-labelledby="symbol-stroke-label" data-symbol-stroke />
           </div>
         </div>
       </section>

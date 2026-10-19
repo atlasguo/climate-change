@@ -103,7 +103,7 @@ export const BASEMAPS = [
   },
   {
     id: 'terrain',
-    label: 'Terrain',
+    label: 'Relief',
     description: 'Grey hillshade, rivers, lakes and borders',
     labelTheme: (theme) => (theme === 'light' ? LIGHT_THEME : DARK_THEME),
     build: (theme) => {
@@ -168,10 +168,10 @@ export const BASEMAPS = [
   },
   {
     id: 'relief',
-    label: 'Relief',
+    label: 'Satellite',
     description: 'NASA Blue Marble shaded relief with ocean depth',
     labelTheme: () => IMAGERY_THEME,
-    build: () => ({
+    build: (theme) => ({
       sources: {
         'bm-relief': {
           type: 'raster',
@@ -182,7 +182,15 @@ export const BASEMAPS = [
         }
       },
       layers: [
-        { id: 'bm-relief', type: 'raster', source: 'bm-relief', paint: { 'raster-saturation': -0.45, 'raster-brightness-max': 0.5, 'raster-contrast': 0.05 } }
+        {
+          id: 'bm-relief',
+          type: 'raster',
+          source: 'bm-relief',
+          // The imagery has a single version, so the light theme lifts it instead of dimming it.
+          paint: theme === 'light'
+            ? { 'raster-saturation': -0.35, 'raster-brightness-min': 0.25, 'raster-contrast': -0.05 }
+            : { 'raster-saturation': -0.45, 'raster-brightness-max': 0.5, 'raster-contrast': 0.05 }
+        }
       ]
     })
   },
@@ -301,10 +309,57 @@ export async function applyBasemap(map, basemapId, beforeLayerId, theme = 'dark'
     map.addSource(id, source);
   }
   const before = beforeLayerId && map.getLayer(beforeLayerId) ? beforeLayerId : undefined;
+  baseOpacities.clear();
   for (const layer of definition.layers ?? []) {
-    map.addLayer(layer, before);
+    const property = OPACITY_PROPERTY[layer.type];
+    if (!property) {
+      map.addLayer(layer, before);
+      continue;
+    }
+    const original = layer.paint?.[property] ?? 1;
+    baseOpacities.set(layer.id, { property, original, hidden: layer.layout?.visibility === 'none' });
+    const hiddenLayout = basemapOpacity > 0 ? {} : { layout: { ...layer.layout, visibility: 'none' } };
+    map.addLayer({ ...layer, ...hiddenLayout, paint: { ...layer.paint, [property]: scaleOpacity(original) } }, before);
   }
   return basemap.id;
+}
+
+// Basemap opacity: each layer's own opacity is scaled, so the overlay cells are untouched.
+const OPACITY_PROPERTY = {
+  background: 'background-opacity',
+  fill: 'fill-opacity',
+  line: 'line-opacity',
+  raster: 'raster-opacity',
+  circle: 'circle-opacity',
+  'fill-extrusion': 'fill-extrusion-opacity',
+  // Hillshade has no opacity, so its shading strength is scaled instead.
+  hillshade: 'hillshade-exaggeration'
+};
+const baseOpacities = new Map();
+let basemapOpacity = 1;
+
+function scaleOpacity(original) {
+  if (typeof original === 'number') {
+    return original * basemapOpacity;
+  }
+  // Zoom curves cannot be wrapped in arithmetic, so their output stops are scaled instead.
+  if (Array.isArray(original) && (original[0] === 'interpolate' || original[0] === 'step')) {
+    const firstOutput = original[0] === 'interpolate' ? 4 : 2;
+    return original.map((item, index) => (index >= firstOutput && (index - firstOutput) % 2 === 0 && typeof item === 'number' ? item * basemapOpacity : item));
+  }
+  return basemapOpacity === 1 ? original : basemapOpacity;
+}
+
+export function setBasemapOpacity(map, value = basemapOpacity) {
+  basemapOpacity = Math.min(1, Math.max(0, Number(value) || 0));
+  syncBorderOpacity(map);
+  for (const [id, { property, original, hidden }] of baseOpacities) {
+    if (map.getLayer(id)) {
+      map.setPaintProperty(id, property, scaleOpacity(original));
+      // Fully hidden layers are skipped by the renderer as well.
+      map.setLayoutProperty(id, 'visibility', basemapOpacity > 0 && !hidden ? 'visible' : 'none');
+    }
+  }
 }
 
 // Shared reference layers drawn above the data cells: country borders and place names from
@@ -447,6 +502,34 @@ export function applyReferenceTheme(map, theme = DARK_THEME) {
     }
     for (const [property, value] of Object.entries(layer.paint ?? {})) {
       map.setPaintProperty(layer.id, property, value);
+    }
+  }
+  setLabelOpacity(map, labelOpacity);
+  syncBorderOpacity(map);
+}
+
+// Country borders belong to the basemap, so they fade with it.
+function syncBorderOpacity(map) {
+  for (const layerId of REFERENCE_BORDER_LAYERS) {
+    if (map.getLayer(layerId)) {
+      map.setPaintProperty(layerId, 'line-opacity', basemapOpacity);
+      map.setLayoutProperty(layerId, 'visibility', basemapOpacity > 0 ? 'visible' : 'none');
+    }
+  }
+}
+
+let labelOpacity = 1;
+
+export function setLabelOpacity(map, value = labelOpacity) {
+  labelOpacity = Math.min(1, Math.max(0, Number(value) || 0));
+  for (const layerId of REFERENCE_LABEL_LAYERS) {
+    const layer = map.getLayer(layerId);
+    if (!layer) {
+      continue;
+    }
+    const properties = layer.type === 'circle' ? ['circle-opacity', 'circle-stroke-opacity'] : ['text-opacity', 'icon-opacity'];
+    for (const property of properties) {
+      map.setPaintProperty(layerId, property, labelOpacity);
     }
   }
 }

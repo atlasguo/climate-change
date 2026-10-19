@@ -53,7 +53,7 @@ export function buildBarRects(series, domain, x, y, width, height, palette, colo
       const top = Math.min(py, zeroY);
       const barHeight = Math.max(1.1, Math.abs(zeroY - py));
       const fill = rampColor(value, colorDomain, palette);
-      return `<rect x="${left.toFixed(2)}" y="${top.toFixed(2)}" width="${Math.max(0.45, barWidth).toFixed(2)}" height="${barHeight.toFixed(2)}" fill="${fill}" fill-opacity="0.95" shape-rendering="crispEdges" />`;
+      return `<rect data-bar-index="${index}" x="${left.toFixed(2)}" y="${top.toFixed(2)}" width="${Math.max(0.45, barWidth).toFixed(2)}" height="${barHeight.toFixed(2)}" fill="${fill}" fill-opacity="0.95" shape-rendering="crispEdges" />`;
     })
     .join('');
 }
@@ -121,7 +121,7 @@ export function buildBucketRingSlices(
         const segmentSliceAngle = (Math.PI * 2) / segmentCount;
         const startAngle = startOffset + sliceIndex * segmentSliceAngle;
         const endAngle = startAngle + segmentSliceAngle;
-        return `<path d="${describeRingSlice(cx, cy, ringInnerRadius, ringOuterRadius, startAngle, endAngle)}" fill="${fill}" />`;
+        return `<path data-ring-index="${index}" d="${describeRingSlice(cx, cy, ringInnerRadius, ringOuterRadius, startAngle, endAngle)}" fill="${fill}" />`;
       }).join('');
     })
     .join('');

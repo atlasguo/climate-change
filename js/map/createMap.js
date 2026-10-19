@@ -4,11 +4,12 @@ import { buildRenderableCells, getCommittedValueDomains, getDensityLevelForZoom 
 import { getDisplayCell, getGridCellIdAt, getGridDisplayCells, getGridIndexes, getH3DisplayCells } from '../data/displayCells.js';
 import { createGlyphOverlay } from './createGlyphOverlay.js';
 import { getTheme, themeColor } from '../theme.js';
-import { applyBasemap, applyReferenceTheme, BASEMAPS, buildReferenceLayers, getBasemapTheme, REFERENCE_LABEL_LAYERS } from './basemaps.js';
+import { applyBasemap, applyReferenceTheme, BASEMAPS, buildReferenceLayers, getBasemapTheme, REFERENCE_LABEL_LAYERS, setBasemapOpacity, setLabelOpacity } from './basemaps.js';
 
 const H3_SOURCE_ID = 'climate-h3-cells';
 const H3_FILL_LAYER_ID = 'climate-h3-fill';
 const H3_LINE_LAYER_ID = 'climate-h3-line';
+const H3_SHADOW_LAYER_ID = 'climate-h3-line-shadow';
 const H3_HOVERED_FILL_LAYER_ID = 'climate-h3-hovered-fill';
 const H3_HOVERED_LAYER_ID = 'climate-h3-hovered';
 const H3_SELECTED_FILL_LAYER_ID = 'climate-h3-selected-fill';
@@ -17,6 +18,7 @@ const GRID_SOURCE_ID = 'climate-grid-cells';
 const GRID_LINE_SOURCE_ID = 'climate-grid-lines';
 const GRID_FILL_LAYER_ID = 'climate-grid-fill';
 const GRID_LINE_LAYER_ID = 'climate-grid-line';
+const GRID_SHADOW_LAYER_ID = 'climate-grid-line-shadow';
 const GRID_HOVERED_FILL_LAYER_ID = 'climate-grid-hovered-fill';
 const GRID_HOVERED_LAYER_ID = 'climate-grid-hovered';
 const GRID_SELECTED_FILL_LAYER_ID = 'climate-grid-selected-fill';
@@ -72,6 +74,78 @@ const RENDER_LOADING_COPY = {
   }
 };
 
+const SCALE_MAX_WIDTH = 96;
+// The scale appears once the view is zoomed in to ~270 km hexagons (H3 resolution 2).
+const SCALE_MIN_H3_RESOLUTION = 2;
+
+function roundScaleDistance(value) {
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const fraction = value / magnitude;
+  const step = fraction >= 5 ? 5 : fraction >= 3 ? 3 : fraction >= 2 ? 2 : 1;
+  return step * magnitude;
+}
+
+function formatScaleDistance(value) {
+  return value >= 1 ? value.toLocaleString('en-US') : String(Number(value.toPrecision(1)));
+}
+
+// Metric bar on top and imperial bar below, sharing one left edge. Measured at the map center,
+// so on the globe it is exact only along that latitude.
+class DualScaleControl {
+  constructor(isVisible) {
+    this._isVisible = isVisible;
+  }
+
+  onAdd(map) {
+    this._map = map;
+    this._container = document.createElement('div');
+    this._container.className = 'maplibregl-ctrl map-scale';
+    this._container.setAttribute('aria-hidden', 'true');
+    this._container.innerHTML = `
+      <div class="map-scale__row map-scale__row--metric"><span class="map-scale__label"></span><span class="map-scale__bar"></span></div>
+      <div class="map-scale__row map-scale__row--imperial"><span class="map-scale__bar"></span><span class="map-scale__label"></span></div>`;
+    this._update = () => this._render();
+    map.on('move', this._update);
+    map.on('resize', this._update);
+    this._render();
+    return this._container;
+  }
+
+  onRemove() {
+    this._map.off('move', this._update);
+    this._map.off('resize', this._update);
+    this._container.remove();
+  }
+
+  _render() {
+    const map = this._map;
+    const visible = this._isVisible(map);
+    this._container.classList.toggle('is-hidden', !visible);
+    if (!visible) {
+      return;
+    }
+    const height = map.getContainer().clientHeight / 2;
+    const left = map.unproject([0, height]);
+    const right = map.unproject([SCALE_MAX_WIDTH, height]);
+    const maxMeters = left.distanceTo(right);
+    if (!Number.isFinite(maxMeters) || maxMeters <= 0) {
+      return;
+    }
+    const units = [
+      { row: '.map-scale__row--metric', max: maxMeters / 1000, unit: 'km', small: maxMeters, smallUnit: 'm', smallLimit: 1 },
+      { row: '.map-scale__row--imperial', max: maxMeters / 1609.344, unit: 'mi', small: maxMeters * 3.2808, smallUnit: 'ft', smallLimit: 1 }
+    ];
+    for (const entry of units) {
+      const useSmall = entry.max < entry.smallLimit;
+      const max = useSmall ? entry.small : entry.max;
+      const distance = roundScaleDistance(max);
+      const row = this._container.querySelector(entry.row);
+      row.querySelector('.map-scale__bar').style.width = `${Math.round((distance / max) * SCALE_MAX_WIDTH)}px`;
+      row.querySelector('.map-scale__label').textContent = `${formatScaleDistance(distance)} ${useSmall ? entry.smallUnit : entry.unit}`;
+    }
+  }
+}
+
 function setLayerVisibility(map, layerId, visible) {
   if (!map.getLayer(layerId)) {
     return;
@@ -108,6 +182,8 @@ function addReferenceLayers(map, state, theme) {
     }
   }
   syncLabelLayerVisibility(map, state);
+  setLabelOpacity(map);
+  setBasemapOpacity(map);
 }
 
 function buildOverlayState(rawCells, metadata, state, densityLevel, h3Resolution, gridDegrees, viewportDomains = null) {
@@ -391,12 +467,14 @@ function setUnitLayerVisibility(map, unit) {
 
   for (const [layerId, visible] of [
     [H3_FILL_LAYER_ID, hexVisible],
+    [H3_SHADOW_LAYER_ID, hexVisible],
     [H3_LINE_LAYER_ID, hexVisible],
     [H3_HOVERED_FILL_LAYER_ID, hexVisible],
     [H3_HOVERED_LAYER_ID, hexVisible],
     [H3_SELECTED_FILL_LAYER_ID, hexVisible],
     [H3_SELECTED_LAYER_ID, hexVisible],
     [GRID_FILL_LAYER_ID, gridVisible],
+    [GRID_SHADOW_LAYER_ID, gridVisible],
     [GRID_LINE_LAYER_ID, gridVisible],
     [GRID_HOVERED_FILL_LAYER_ID, gridVisible],
     [GRID_HOVERED_LAYER_ID, gridVisible],
@@ -474,6 +552,18 @@ function addGeometryLayers(map, resolution, gridDegrees) {
   });
 
   map.addLayer({
+    id: H3_SHADOW_LAYER_ID,
+    type: 'line',
+    source: H3_SOURCE_ID,
+    paint: {
+      'line-color': themeColor('cellShadow'),
+      'line-width': ['interpolate', ['linear'], ['zoom'], 0, 3.4, 6, 4.6],
+      'line-blur': 2.6,
+      'line-opacity': 0.5
+    }
+  });
+
+  map.addLayer({
     id: H3_LINE_LAYER_ID,
     type: 'line',
     source: H3_SOURCE_ID,
@@ -483,27 +573,13 @@ function addGeometryLayers(map, resolution, gridDegrees) {
         'interpolate',
         ['linear'],
         ['zoom'],
-        0,
-        1.05,
-        2.44,
-        1.2,
-        4,
-        1.4,
-        6,
-        1.7
+        0, 1.05, 2.44, 1.2, 4, 1.4, 6, 1.7
       ],
       'line-opacity': [
         'interpolate',
         ['linear'],
         ['zoom'],
-        0,
-        0.36,
-        2.44,
-        0.34,
-        4,
-        0.32,
-        6,
-        0.3
+        0, 0.36, 2.44, 0.34, 4, 0.32, 6, 0.3
       ]
     }
   });
@@ -608,6 +684,21 @@ function addGeometryLayers(map, resolution, gridDegrees) {
   });
 
   map.addLayer({
+    id: GRID_SHADOW_LAYER_ID,
+    type: 'line',
+    source: GRID_LINE_SOURCE_ID,
+    layout: {
+      visibility: 'none'
+    },
+    paint: {
+      'line-color': themeColor('cellShadow'),
+      'line-width': ['interpolate', ['linear'], ['zoom'], 0, 3.4, 6, 4.6],
+      'line-blur': 2.6,
+      'line-opacity': 0.5
+    }
+  });
+
+  map.addLayer({
     id: GRID_LINE_LAYER_ID,
     type: 'line',
     source: GRID_LINE_SOURCE_ID,
@@ -620,27 +711,13 @@ function addGeometryLayers(map, resolution, gridDegrees) {
         'interpolate',
         ['linear'],
         ['zoom'],
-        0,
-        0.9,
-        2.44,
-        1.05,
-        4,
-        1.25,
-        6,
-        1.5
+        0, 0.9, 2.44, 1.05, 4, 1.25, 6, 1.5
       ],
       'line-opacity': [
         'interpolate',
         ['linear'],
         ['zoom'],
-        0,
-        0.32,
-        2.44,
-        0.3,
-        4,
-        0.28,
-        6,
-        0.26
+        0, 0.32, 2.44, 0.3, 4, 0.28, 6, 0.26
       ]
     }
   });
@@ -972,25 +1049,69 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     activeBasemap = DEFAULT_BASEMAP;
   }
 
+  // Basemap and label opacity, remembered per browser.
+  const OPACITY_STORAGE_KEY = 'ccv-map-opacity';
+  const mapOpacity = { basemap: 0.9, labels: 0.9 };
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(OPACITY_STORAGE_KEY) ?? '{}');
+    for (const key of Object.keys(mapOpacity)) {
+      if (Number.isFinite(stored?.[key])) {
+        mapOpacity[key] = clamp(stored[key], 0, 1);
+      }
+    }
+  } catch {
+    // Fall back to the defaults.
+  }
+  setBasemapOpacity(map, mapOpacity.basemap);
+  setLabelOpacity(map, mapOpacity.labels);
+
   class BasemapControl {
     onAdd() {
       const wrapper = document.createElement('fieldset');
       wrapper.className = 'maplibregl-ctrl basemap-switcher';
+      wrapper.setAttribute('aria-label', 'Basemap and labels');
       wrapper.innerHTML = `
-        <legend class="basemap-switcher__title">Basemap</legend>
-        ${BASEMAPS.map((item) => `
-          <label class="basemap-switcher__option" title="${item.description}">
-            <input type="radio" name="basemap-switcher" value="${item.id}" ${item.id === activeBasemap ? 'checked' : ''} />
-            <span>${item.label}</span>
-          </label>
-        `).join('')}
-        <label class="basemap-switcher__option basemap-switcher__labels">
-          <input type="checkbox" data-show-labels ${store.getState().showLabels !== false ? 'checked' : ''} />
-          <span>Place names</span>
-        </label>
+        <div class="basemap-switcher__layers">
+          <div class="basemap-switcher__layer">
+            <label class="basemap-switcher__layer-name">
+              <input type="checkbox" data-show-labels ${store.getState().showLabels !== false ? 'checked' : ''} />
+              <span>Labels</span>
+            </label>
+            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="${Math.round(mapOpacity.labels * 100)}" aria-label="Label opacity" data-layer-opacity="labels" />
+            <span class="basemap-switcher__value" data-layer-opacity-value="labels">${Math.round(mapOpacity.labels * 100)}%</span>
+          </div>
+          <div class="basemap-switcher__layer">
+            <span class="basemap-switcher__layer-name">Basemap</span>
+            <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="${Math.round(mapOpacity.basemap * 100)}" aria-label="Basemap opacity" data-layer-opacity="basemap" />
+            <span class="basemap-switcher__value" data-layer-opacity-value="basemap">${Math.round(mapOpacity.basemap * 100)}%</span>
+          </div>
+        </div>
+        <div class="basemap-switcher__choices">
+          ${BASEMAPS.map((item) => `
+            <label class="basemap-switcher__choice" title="${item.description}">
+              <input type="radio" name="basemap-switcher" value="${item.id}" ${item.id === activeBasemap ? 'checked' : ''} />
+              <span>${item.label}</span>
+            </label>
+          `).join('')}
+        </div>
         <p class="basemap-switcher__status" data-basemap-status role="status" aria-live="polite"></p>
       `;
       const status = wrapper.querySelector('[data-basemap-status]');
+      wrapper.addEventListener('input', (event) => {
+        const key = event.target?.dataset?.layerOpacity;
+        if (!key) {
+          return;
+        }
+        const pct = Number(event.target.value);
+        mapOpacity[key] = pct / 100;
+        wrapper.querySelector(`[data-layer-opacity-value="${key}"]`).textContent = `${pct}%`;
+        (key === 'basemap' ? setBasemapOpacity : setLabelOpacity)(map, mapOpacity[key]);
+        try {
+          window.localStorage.setItem(OPACITY_STORAGE_KEY, JSON.stringify(mapOpacity));
+        } catch {
+          // Remembering the choice is optional.
+        }
+      });
       wrapper.addEventListener('change', async (event) => {
         const input = event.target;
         if (input instanceof HTMLInputElement && input.matches('[data-show-labels]')) {
@@ -1025,6 +1146,12 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
 
   const basemapControl = new BasemapControl();
   map.addControl(basemapControl, 'bottom-left');
+  // Sits to the right of the basemap panel (see .maplibregl-ctrl-bottom-left in styles.css).
+  // Tied to the hexagon resolution the zoom would pick, so it shows at the same point in grid mode too.
+  map.addControl(
+    new DualScaleControl(() => (getAdaptiveH3Resolution(map, metadata, getDensityLevelForZoom(map.getZoom())) ?? 0) >= SCALE_MIN_H3_RESOLUTION),
+    'bottom-left'
+  );
 
   // On phones the basemap options live in the "Map" tab of the bottom sheet.
   const mobileMapSlot = document.querySelector('[data-mobile-map-slot]');
@@ -1038,13 +1165,19 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
   placeBasemapControl();
   phoneQuery.addEventListener('change', placeBasemapControl);
 
-  // The attribution starts expanded; on phones collapse it to the (i) button.
+  // The attribution is shown on load, then folds into the (i) button after the first
+  // map interaction or five seconds, as the OSMF attribution guidelines allow.
+  let attributionTimer = 0;
+  const collapseAttribution = () => {
+    window.clearTimeout(attributionTimer);
+    map.off('movestart', collapseAttribution);
+    const attribution = container.querySelector('.maplibregl-ctrl-attrib');
+    attribution?.classList.remove('maplibregl-compact-show');
+    attribution?.removeAttribute('open');
+  };
   map.once('idle', () => {
-    if (phoneQuery.matches) {
-      const attribution = container.querySelector('.maplibregl-ctrl-attrib');
-      attribution?.classList.remove('maplibregl-compact-show');
-      attribution?.removeAttribute('open');
-    }
+    attributionTimer = window.setTimeout(collapseAttribution, 5000);
+    map.on('movestart', collapseAttribution);
   });
 
   let latestVisibleCellIds = new Set();
@@ -1057,6 +1190,11 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
       latestVisibleCellIds = visibleIds;
     },
     onSelectCell: (cellId) => {
+      if (cellId === currentAppState.selectedCell) {
+        clearSearchSelectionMarker();
+        store.selectCell(null);
+        return;
+      }
       const cell = getDisplayCell(cellId);
       store.selectCell(cellId, cell && Number.isFinite(cell.lat) ? { lat: cell.lat, lon: cell.lon } : null);
     }
@@ -1271,10 +1409,39 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     if (!anchor || !Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lon)) {
       return;
     }
-    map.easeTo({
-      center: [anchor.lon, anchor.lat],
-      duration: 620
+    // Wait a frame so the phone sheet that opens on selection is laid out before measuring it.
+    requestAnimationFrame(() => {
+      map.easeTo({
+        center: [anchor.lon, anchor.lat],
+        offset: visibleMapOffset(),
+        duration: 620
+      });
     });
+  }
+
+  // Pixel offset from the map's center to the center of the part not covered by the phone sheet.
+  function visibleMapOffset() {
+    if (!phoneQuery.matches) {
+      return [0, 0];
+    }
+    const mapRect = container.getBoundingClientRect();
+    let { top, bottom, left, right } = mapRect;
+    const covers = document.querySelectorAll('.mobile-sheet, .panel--right, .panel--left, .timeline-dock, .mobile-map-panel');
+    for (const element of covers) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      if (rect.width >= mapRect.width * 0.6) {
+        if (rect.top > top) bottom = Math.min(bottom, rect.top);
+      } else if (rect.left > mapRect.left + mapRect.width / 2) {
+        right = Math.min(right, rect.left);
+      } else if (rect.right < mapRect.left + mapRect.width / 2) {
+        left = Math.max(left, rect.right);
+      }
+    }
+    return [
+      (left + right) / 2 - (mapRect.left + mapRect.right) / 2,
+      (top + bottom) / 2 - (mapRect.top + mapRect.bottom) / 2
+    ];
   }
 
   function processPointerMove(event) {
@@ -1326,7 +1493,11 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
       return;
     }
     const cellId = displayedCellIdAt(lngLat.lat, lngLat.lng);
-    if (cellId && getDisplayCell(cellId)) {
+    if (cellId && cellId === currentAppState.selectedCell) {
+      // Tapping the selected cell again clears it (details return to the global average).
+      clearSearchSelectionMarker();
+      store.selectCell(null);
+    } else if (cellId && getDisplayCell(cellId)) {
       store.selectCell(cellId, { lat: lngLat.lat, lon: lngLat.lng });
     }
   }
@@ -1531,27 +1702,13 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
       'interpolate',
       ['linear'],
       ['zoom'],
-      0,
-      0.72 * factor,
-      2.44,
-      0.68 * factor,
-      4,
-      0.62 * factor,
-      6,
-      0.56 * factor
+      0, 0.72 * factor, 2.44, 0.68 * factor, 4, 0.62 * factor, 6, 0.56 * factor
     ];
     const gridBaseOpacity = [
       'interpolate',
       ['linear'],
       ['zoom'],
-      0,
-      0.7 * factor,
-      2.44,
-      0.66 * factor,
-      4,
-      0.6 * factor,
-      6,
-      0.54 * factor
+      0, 0.7 * factor, 2.44, 0.66 * factor, 4, 0.6 * factor, 6, 0.54 * factor
     ];
 
     const setPaintIfLayerExists = (layerId, property, value) => {
@@ -1591,6 +1748,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     
     // Update H3 line layers
     setPaintIfLayerExists(H3_LINE_LAYER_ID, 'line-opacity', h3BaseOpacity);
+    setPaintIfLayerExists(H3_SHADOW_LAYER_ID, 'line-opacity', 0.5 * factor);
     setPaintIfLayerExists(H3_HOVERED_LAYER_ID, 'line-opacity', 0.98);
     setPaintIfLayerExists(H3_SELECTED_LAYER_ID, 'line-opacity', 0.98);
     
@@ -1601,6 +1759,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     
     // Update Grid line layers
     setPaintIfLayerExists(GRID_LINE_LAYER_ID, 'line-opacity', gridBaseOpacity);
+    setPaintIfLayerExists(GRID_SHADOW_LAYER_ID, 'line-opacity', 0.5 * factor);
     setPaintIfLayerExists(GRID_HOVERED_LAYER_ID, 'line-opacity', 0.98);
     setPaintIfLayerExists(GRID_SELECTED_LAYER_ID, 'line-opacity', 0.98);
   }
@@ -1610,6 +1769,8 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     const paints = [
       [H3_FILL_LAYER_ID, 'fill-color', 'cellFill'],
       [GRID_FILL_LAYER_ID, 'fill-color', 'cellFill'],
+      [H3_SHADOW_LAYER_ID, 'line-color', 'cellShadow'],
+      [GRID_SHADOW_LAYER_ID, 'line-color', 'cellShadow'],
       [H3_LINE_LAYER_ID, 'line-color', 'cellLine'],
       [GRID_LINE_LAYER_ID, 'line-color', 'gridLine'],
       [H3_HOVERED_FILL_LAYER_ID, 'fill-color', 'hoverFill'],

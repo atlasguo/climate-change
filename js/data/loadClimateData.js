@@ -2,6 +2,7 @@ import { applyPaletteConfig } from '../scales/climateScales.js';
 import { getTheme } from '../theme.js';
 import { averageClimateFields } from './aggregateCells.js';
 import { initDisplayCells } from './displayCells.js';
+import { loadPlaces } from './placeLookup.js';
 
 const H3_RESOLUTION = 3;
 const DATA_ROOT = new URL('../../data/', import.meta.url);
@@ -147,7 +148,8 @@ export async function loadClimateData({ onProgress = () => {} } = {}) {
     fetchJson(new URL('cells.json', DATA_ROOT), 'cells.json'),
     fetchJson(new URL('roni.json', DATA_ROOT), 'roni.json'),
     fetchBinary(new URL(metadata.series.temperature.file, DATA_ROOT), 'temperature data', reportBytes('temperature')),
-    fetchBinary(new URL(metadata.series.precipitation.file, DATA_ROOT), 'precipitation data', reportBytes('precipitation'))
+    fetchBinary(new URL(metadata.series.precipitation.file, DATA_ROOT), 'precipitation data', reportBytes('precipitation')),
+    loadPlaces(new URL('places.json', DATA_ROOT))
   ]);
 
   onProgress({ title: 'Preparing climate data', detail: 'Decoding monthly series' });

@@ -60,12 +60,6 @@ export function getMonthIndex(metadata, monthLabel) {
   return lookup.get(monthLabel) ?? -1;
 }
 
-export function getRangeIndices(metadata, range) {
-  const startIndex = Math.max(0, getMonthIndex(metadata, range.start));
-  const endIndex = Math.max(startIndex, getMonthIndex(metadata, range.end));
-  return { startIndex, endIndex };
-}
-
 export function isTrendMode(metadata, state) {
   return false;
 }
@@ -101,16 +95,6 @@ export function aggregateSeriesWindow(values, startIndex, endIndex, periodMonths
     points.push(count ? total / count : 0);
   }
   return points;
-}
-
-export function bucketSeriesWindow(values, startIndex, endIndex, periodMonths) {
-  const buckets = [];
-  const safeEndIndex = Math.max(startIndex, endIndex);
-  for (let index = startIndex; index <= safeEndIndex; index += periodMonths) {
-    const bucketEnd = Math.min(safeEndIndex, index + periodMonths - 1);
-    buckets.push(values.slice(index, bucketEnd + 1));
-  }
-  return buckets;
 }
 
 function getVariableSeries(cell, variable) {

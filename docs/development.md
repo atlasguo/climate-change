@@ -39,5 +39,6 @@ Current versions of Chrome, Edge, Firefox or Safari with WebGL and `Decompressio
 | `npm run generate:data` | Build the browser data from the ERA5 archive |
 | `npm run generate:data:demo` | Write synthetic demo data (overwrites the real data) |
 | `npm run update:roni` | Refresh `data/roni.json` from NOAA CPC |
+| `npm run generate:favicon` / `npm run generate:logo` | Render the favicon and the title ring logo |
 
 See [data.md](data.md) for the data formats and how to regenerate the data.
