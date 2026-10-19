@@ -960,6 +960,128 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     setYearRange(Number(startYearSelect.value), Number(endYearSelect.value));
   });
 
+  const timelineAxis = root.querySelector('[data-timeline-axis]');
+  const timelineHandles = {
+    start: root.querySelector('[data-timeline-handle="start"]'),
+    end: root.querySelector('[data-timeline-handle="end"]')
+  };
+  // While a handle is dragged the range is previewed locally and committed on release.
+  let dragPreview = null;
+
+  function yearStartRatio(year) {
+    return getMonthIndex(metadata, `${year}-01`) / monthLabels.length;
+  }
+
+  function yearEndRatio(year) {
+    const index = getMonthIndex(metadata, `${year}-12`);
+    return index === -1 ? 1 : (index + 1) / monthLabels.length;
+  }
+
+  // Draws the selected years on the timeline, the handles and the dropdowns.
+  function paintYearRange(startYear, endYear) {
+    const startRatio = yearStartRatio(startYear);
+    const endRatio = yearEndRatio(endYear);
+    timelineMaskBefore.style.width = `${(startRatio * 100).toFixed(3)}%`;
+    timelineMaskAfter.style.left = `${(endRatio * 100).toFixed(3)}%`;
+    timelineMaskBefore.hidden = startRatio <= 0;
+    timelineMaskAfter.hidden = endRatio >= 1;
+    for (const tick of timelineRuler.children) {
+      const tickYear = Number(tick.dataset.year);
+      tick.classList.toggle('is-outside', tickYear < startYear || tickYear > endYear);
+    }
+
+    for (const [key, handle] of Object.entries(timelineHandles)) {
+      const year = key === 'start' ? startYear : endYear;
+      handle.style.left = `${((key === 'start' ? startRatio : endRatio) * 100).toFixed(3)}%`;
+      handle.querySelector('[data-handle-tag]').textContent = String(year);
+      handle.setAttribute('aria-valuemin', String(key === 'start' ? firstYear : startYear));
+      handle.setAttribute('aria-valuemax', String(key === 'start' ? endYear : lastYear));
+      handle.setAttribute('aria-valuenow', String(year));
+      handle.setAttribute('aria-valuetext', String(year));
+    }
+    const spanPx = (endRatio - startRatio) * timelineAxis.clientWidth;
+    timelineAxis.classList.toggle('is-tight', spanPx < 96);
+
+    startYearSelect.value = String(startYear);
+    endYearSelect.value = String(endYear);
+    for (const option of startYearSelect.options) {
+      option.disabled = Number(option.value) > endYear;
+    }
+    for (const option of endYearSelect.options) {
+      option.disabled = Number(option.value) < startYear;
+    }
+  }
+
+  function currentYearRange() {
+    const { rangeA, rangeB } = store.getState();
+    return { start: Number(rangeA.start.slice(0, 4)), end: Number(rangeB.start.slice(0, 4)) };
+  }
+
+  function yearFromPointer(key, clientX, range) {
+    const rect = timelineAxis.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width)));
+    const boundaryYear = firstYear + Math.round((ratio * monthLabels.length) / 12);
+    return key === 'start'
+      ? Math.min(range.end, Math.max(firstYear, boundaryYear))
+      : Math.max(range.start, Math.min(lastYear, boundaryYear - 1));
+  }
+
+  for (const [key, handle] of Object.entries(timelineHandles)) {
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      handle.setPointerCapture(event.pointerId);
+      handle.focus({ preventScroll: true });
+      handle.classList.add('is-dragging');
+      dragPreview = { key, ...currentYearRange() };
+    });
+
+    handle.addEventListener('pointermove', (event) => {
+      if (!dragPreview || dragPreview.key !== key) {
+        return;
+      }
+      const year = yearFromPointer(key, event.clientX, dragPreview);
+      if (year !== dragPreview[key]) {
+        dragPreview[key] = year;
+        paintYearRange(dragPreview.start, dragPreview.end);
+      }
+    });
+
+    const finishDrag = () => {
+      if (!dragPreview || dragPreview.key !== key) {
+        return;
+      }
+      const { start, end } = dragPreview;
+      dragPreview = null;
+      handle.classList.remove('is-dragging');
+      setYearRange(start, end);
+      paintYearRange(...Object.values(currentYearRange()));
+    };
+    handle.addEventListener('pointerup', finishDrag);
+    handle.addEventListener('pointercancel', finishDrag);
+    handle.addEventListener('lostpointercapture', finishDrag);
+
+    handle.addEventListener('keydown', (event) => {
+      const range = currentYearRange();
+      const steps = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -5, PageUp: 5 };
+      let year = range[key];
+      if (event.key in steps) {
+        year += steps[event.key];
+      } else if (event.key === 'Home') {
+        year = key === 'start' ? firstYear : range.start;
+      } else if (event.key === 'End') {
+        year = key === 'start' ? range.end : lastYear;
+      } else {
+        return;
+      }
+      event.preventDefault();
+      year = key === 'start' ? Math.min(range.end, Math.max(firstYear, year)) : Math.max(range.start, Math.min(lastYear, year));
+      setYearRange(key === 'start' ? year : range.start, key === 'end' ? year : range.end);
+    });
+  }
+
   root.querySelector('[data-action="reset-ranges"]').addEventListener('click', () => store.resetRanges());
   symbolSizeSlider?.addEventListener('input', () => {
     const pct = Number(symbolSizeSlider.value);
@@ -1459,13 +1581,10 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       const startYear = Number(state.rangeA.start?.split('-')[0]);
       const endYear = Number(state.rangeB.start?.split('-')[0]);
 
-      startYearSelect.value = String(startYear);
-      endYearSelect.value = String(endYear);
-      for (const option of startYearSelect.options) {
-        option.disabled = Number(option.value) > endYear;
-      }
-      for (const option of endYearSelect.options) {
-        option.disabled = Number(option.value) < startYear;
+      if (dragPreview) {
+        paintYearRange(dragPreview.start, dragPreview.end);
+      } else {
+        paintYearRange(startYear, endYear);
       }
 
       if (symbolSizeSlider) {
@@ -1504,16 +1623,6 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
         showCityLabelToggle.checked = Boolean(state.showCityLabel);
       }
 
-      const startRatio = getMonthIndex(metadata, state.rangeA.start) / monthLabels.length;
-      const endRatio = (getMonthIndex(metadata, state.rangeB.start) + 1) / monthLabels.length;
-      timelineMaskBefore.style.width = `${(startRatio * 100).toFixed(3)}%`;
-      timelineMaskAfter.style.left = `${(endRatio * 100).toFixed(3)}%`;
-      timelineMaskBefore.hidden = startRatio <= 0;
-      timelineMaskAfter.hidden = endRatio >= 1;
-      for (const tick of timelineRuler.children) {
-        const tickYear = Number(tick.dataset.year);
-        tick.classList.toggle('is-outside', tickYear < startYear || tickYear > endYear);
-      }
       timelineRoni.hidden = !timelineRoniToggle.checked;
 
       const hoveredCell = lookupCell(state.hoveredCell);

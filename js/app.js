@@ -284,12 +284,20 @@ const SHELL = `
 
       <div class="timeline-grid timeline-grid--single">
         <section class="timeline-block">
-          <div class="timeline-axis" data-timeline-axis aria-hidden="true">
-            <div class="timeline-axis__line"></div>
-            <div class="timeline-axis__oni" data-timeline-oni></div>
-            <div class="timeline-axis__ticks" data-timeline-ruler></div>
+          <div class="timeline-axis" data-timeline-axis>
+            <div class="timeline-axis__line" aria-hidden="true"></div>
+            <div class="timeline-axis__oni" data-timeline-oni aria-hidden="true"></div>
+            <div class="timeline-axis__ticks" data-timeline-ruler aria-hidden="true"></div>
             <div class="timeline-axis__mask timeline-axis__mask--before" data-timeline-mask="before" aria-hidden="true"></div>
             <div class="timeline-axis__mask timeline-axis__mask--after" data-timeline-mask="after" aria-hidden="true"></div>
+            <div class="timeline-handle timeline-handle--start" data-timeline-handle="start" role="slider" tabindex="0" aria-label="Start year" aria-orientation="horizontal">
+              <span class="timeline-handle__tag" data-handle-tag></span>
+              <span class="timeline-handle__grip" aria-hidden="true"></span>
+            </div>
+            <div class="timeline-handle timeline-handle--end" data-timeline-handle="end" role="slider" tabindex="0" aria-label="End year" aria-orientation="horizontal">
+              <span class="timeline-handle__tag" data-handle-tag></span>
+              <span class="timeline-handle__grip" aria-hidden="true"></span>
+            </div>
           </div>
         </section>
       </div>

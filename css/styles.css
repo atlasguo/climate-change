@@ -1439,24 +1439,6 @@ input[type='range'] {
   right: 0;
 }
 
-/* Range edges stop above the year labels so the labels stay readable. */
-.timeline-axis__mask::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 40px;
-  width: 2px;
-  background: rgba(242, 245, 248, 0.85);
-}
-
-.timeline-axis__mask--before::after {
-  right: -1px;
-}
-
-.timeline-axis__mask--after::after {
-  left: -1px;
-}
-
 .timeline-axis__tick.is-outside {
   opacity: 0.3;
 }
@@ -1832,4 +1814,106 @@ input[type='range'] {
 
 .timeline-editor__select {
   min-width: 84px;
+}
+
+/* Range handles: "[" marks the start year, "]" the end year. */
+.timeline-handle {
+  --handle-color: #f2f5f8;
+  position: absolute;
+  top: 0;
+  bottom: 40px;
+  z-index: 8;
+  width: 24px;
+  margin-left: -12px;
+  cursor: ew-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.timeline-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 11px;
+  width: 2px;
+  background: var(--handle-color);
+}
+
+.timeline-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 2px;
+  background: var(--handle-color);
+}
+
+.timeline-handle--start::after {
+  left: 11px;
+}
+
+.timeline-handle--end::after {
+  right: 11px;
+}
+
+.timeline-handle__tag {
+  position: absolute;
+  top: 0;
+  padding: 2px 5px;
+  border-radius: 0 2px 2px 0;
+  background: var(--handle-color);
+  color: #0e0e0f;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-handle--start .timeline-handle__tag {
+  left: 11px;
+}
+
+.timeline-handle--end .timeline-handle__tag {
+  right: 11px;
+  border-radius: 2px 0 0 2px;
+}
+
+/* When the range is narrow the tags point outward so they don't overlap. */
+.timeline-axis.is-tight .timeline-handle--start .timeline-handle__tag {
+  left: auto;
+  right: 11px;
+  border-radius: 2px 0 0 2px;
+}
+
+.timeline-axis.is-tight .timeline-handle--end .timeline-handle__tag {
+  right: auto;
+  left: 11px;
+  border-radius: 0 2px 2px 0;
+}
+
+.timeline-handle__grip {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  width: 12px;
+  height: 24px;
+  margin-top: -12px;
+  border-radius: 3px;
+  background:
+    linear-gradient(90deg, transparent 3px, #3a3f44 3px 4px, transparent 4px 7px, #3a3f44 7px 8px, transparent 8px) center / 100% 12px no-repeat,
+    var(--handle-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  transition: transform 120ms ease;
+}
+
+.timeline-handle:hover .timeline-handle__grip,
+.timeline-handle.is-dragging .timeline-handle__grip {
+  transform: scaleY(1.12);
+}
+
+.timeline-handle:focus-visible .timeline-handle__grip,
+.timeline-handle:focus-visible .timeline-handle__tag {
+  box-shadow: 0 0 0 2px #0e0e0f, 0 0 0 4px var(--focus-ring);
 }
