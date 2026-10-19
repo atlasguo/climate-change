@@ -6,15 +6,14 @@ Each hexagon or grid cell carries a small chart glyph showing how its climate ha
 
 ## Features
 
-- Temperature and precipitation anomalies for every month from 1940 to 2025
-- Hexagon or grid cells, each showing a small chart glyph in one of three styles: pulse, column or cone
-- Click any cell, or search for a place, to see its full climate record in a detailed chart
-- Draggable timeline for comparing two periods, with strong El Niño and La Niña years marked
-- Consistent colour meanings: blue colder and red warmer, brown drier and green wetter
-- Six basemaps, from terrain relief to night lights, with optional place names
-- Dark and light modes
-- Export the map and charts as images
-- Works on desktop and on phones
+- Monthly temperature and precipitation anomalies, 1940 to 2025
+- Hexagon or grid cells with pulse, column or cone glyphs
+- Click a cell or search a place for its full climate record
+- Draggable timeline with El Niño and La Niña years marked
+- Intuitive colours: red warmer, blue colder, green wetter
+- Six basemaps, from terrain relief to night lights
+- Dark and light modes for desktop and phone screens
+- Image export for the map and every chart
 
 ## Data sources
 
