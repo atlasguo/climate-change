@@ -1,4 +1,5 @@
 import { applyPaletteConfig } from '../scales/climateScales.js';
+import { getTheme } from '../theme.js';
 import { averageClimateFields } from './aggregateCells.js';
 import { initDisplayCells } from './displayCells.js';
 
@@ -124,7 +125,7 @@ export async function loadClimateData({ onProgress = () => {} } = {}) {
     fetchJson(new URL('metadata.json', DATA_ROOT), 'metadata.json'),
     fetchJson(PALETTE_URL, 'color palettes')
   ]);
-  applyPaletteConfig(paletteConfig);
+  applyPaletteConfig(paletteConfig, getTheme());
 
   if (!metadata?.series?.temperature || !metadata?.series?.precipitation || !Array.isArray(metadata.monthLabels)) {
     throw new Error('metadata.json is outdated. Rebuild the data assets with scripts/build_climate_assets.py.');

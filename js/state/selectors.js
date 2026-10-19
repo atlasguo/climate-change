@@ -12,6 +12,12 @@ const renderableCellsCache = new Map();
 const seriesDomainCache = new Map();
 const CACHE_LIMIT = 60000;
 
+// Summaries and renderable cells store colours; drop them when the palette changes.
+export function clearColorCaches() {
+  cellSummaryCache.clear();
+  renderableCellsCache.clear();
+}
+
 // Caches are keyed by the full view state; when one grows past the limit it is reset
 // rather than evicted entry by entry.
 function cacheSet(cache, key, value, limit = CACHE_LIMIT) {

@@ -19,18 +19,32 @@ export const TEMP_LINE_PALETTE = [];
 export const PRECIP_LINE_PALETTE = [];
 export const RONI_PALETTE = [];
 
-export function applyPaletteConfig(config) {
-  const entries = [
-    [TEMP_LINE_PALETTE, config?.temperature],
-    [PRECIP_LINE_PALETTE, config?.precipitation],
-    [RONI_PALETTE, config?.roni]
-  ];
-  for (const [target, colors] of entries) {
-    if (!Array.isArray(colors) || colors.length !== 5 || !colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))) {
-      throw new Error('Invalid palette configuration: each palette needs five #RRGGBB colors.');
+let paletteConfig = null;
+
+function validPalette(colors) {
+  return Array.isArray(colors) && colors.length === 5 && colors.every((c) => /^#[0-9a-f]{6}$/i.test(c));
+}
+
+// The top-level palettes are the dark theme; `light` holds the light-theme variants. Both keep
+// the same meaning: blue = colder, red = warmer; brown = drier, green = wetter;
+// purple = La Niña, gold = El Niño. Neutral values blend into each theme's background.
+export function applyPaletteConfig(config, theme = 'dark') {
+  for (const set of [config, config?.light]) {
+    for (const key of ['temperature', 'precipitation', 'roni']) {
+      if (!validPalette(set?.[key])) {
+        throw new Error('Invalid palette configuration: each palette needs five #RRGGBB colors.');
+      }
     }
-    target.splice(0, target.length, ...colors);
   }
+  paletteConfig = config;
+  setPaletteTheme(theme);
+}
+
+export function setPaletteTheme(theme) {
+  const set = theme === 'light' ? paletteConfig.light : paletteConfig;
+  TEMP_LINE_PALETTE.splice(0, TEMP_LINE_PALETTE.length, ...set.temperature);
+  PRECIP_LINE_PALETTE.splice(0, PRECIP_LINE_PALETTE.length, ...set.precipitation);
+  RONI_PALETTE.splice(0, RONI_PALETTE.length, ...set.roni);
 }
 
 export function clamp(value, min, max) {

@@ -1,4 +1,4 @@
-import { buildCellSummary, getAggregatedSeries, getBucketedSeries, getCommittedValueDomains, getMonthIndex, getSeriesColorDomain, isTrendMode } from '../state/selectors.js';
+import { clearColorCaches, buildCellSummary, getAggregatedSeries, getBucketedSeries, getCommittedValueDomains, getMonthIndex, getSeriesColorDomain, isTrendMode } from '../state/selectors.js';
 import {
   buildPaletteGradient,
   buildLegendMarkup,
@@ -8,10 +8,12 @@ import {
   paletteForVariable,
   rampColor,
   RONI_PALETTE,
-  formatNumber
+  formatNumber,
+  setPaletteTheme
 } from '../scales/climateScales.js';
 import { buildBarRects, buildBucketRingSlices, buildLinePoints, zeroLineY } from '../scales/chartRenderers.js';
 import { getDisplayCell } from '../data/displayCells.js';
+import { getTheme, setTheme, themeColor } from '../theme.js';
 
 
 
@@ -58,8 +60,8 @@ function buildAxisTicks(ticks, top, trackHeight, domain, x, formatter, { textAnc
       const x2 = x + 6 * tickDirection;
       const textX = x - 4 * tickDirection;
       return `
-        <line x1="${x}" y1="${y.toFixed(2)}" x2="${x2}" y2="${y.toFixed(2)}" stroke="#5b6066" stroke-width="1" />
-        <text x="${textX}" y="${(y + 4).toFixed(2)}" fill="#a3aab0" font-size="12" text-anchor="${textAnchor}">${formatter(value)}</text>
+        <line x1="${x}" y1="${y.toFixed(2)}" x2="${x2}" y2="${y.toFixed(2)}" stroke="${themeColor('chartAxis')}" stroke-width="1" />
+        <text x="${textX}" y="${(y + 4).toFixed(2)}" fill="${themeColor('chartText')}" font-size="12" text-anchor="${textAnchor}">${formatter(value)}</text>
       `;
     })
     .join('');
@@ -146,7 +148,7 @@ function filterTicksByPixelGap(ticks, domain, trackHeight, minimumGap = 28) {
   return accepted.map((entry) => entry.value);
 }
 
-function buildAxisGuideLines(ticks, top, trackHeight, domain, left, right, { stroke = 'rgba(155, 163, 170, 0.16)', dashArray = '' } = {}) {
+function buildAxisGuideLines(ticks, top, trackHeight, domain, left, right, { stroke = themeColor('chartGrid'), dashArray = '' } = {}) {
   return ticks
     .map((value) => {
       const normalized = Math.max(0, Math.min(1, (value - domain[0]) / (domain[1] - domain[0])));
@@ -157,7 +159,7 @@ function buildAxisGuideLines(ticks, top, trackHeight, domain, left, right, { str
 }
 
 function buildAxisTitle(x, y, label, anchor = 'start') {
-  return `<text x="${x}" y="${y}" fill="#b4bac0" font-size="12" text-anchor="${anchor}">${label}</text>`;
+  return `<text x="${x}" y="${y}" fill="${themeColor('chartTitle')}" font-size="12" text-anchor="${anchor}">${label}</text>`;
 }
 
 function buildSeriesDomain(series, { includeZero = false, minimumSpan = 1, paddingRatio = 0.08 } = {}) {
@@ -269,15 +271,15 @@ function buildXAxisTicks(monthLabels, aIndex, bIndex, left, width, y) {
       const ratio = index / Math.max(1, visibleLabels.length - 1);
       const x = left + ratio * width;
       return `
-        <line x1="${x.toFixed(2)}" y1="${y}" x2="${x.toFixed(2)}" y2="${y + 6}" stroke="#5b6066" stroke-width="1" />
-        <text x="${x.toFixed(2)}" y="${y + 20}" fill="#a3aab0" font-size="12" text-anchor="middle">${year}</text>
+        <line x1="${x.toFixed(2)}" y1="${y}" x2="${x.toFixed(2)}" y2="${y + 6}" stroke="${themeColor('chartAxis')}" stroke-width="1" />
+        <text x="${x.toFixed(2)}" y="${y + 20}" fill="${themeColor('chartText')}" font-size="12" text-anchor="middle">${year}</text>
       `;
     })
     .join('');
 }
 
 function buildXAxisBaseline(left, right, y) {
-  return `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="#43484d" stroke-width="1" />`;
+  return `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${themeColor('chartBaseline')}" stroke-width="1" />`;
 }
 
 const ENSO_THRESHOLD = 0.5;
@@ -446,7 +448,7 @@ function buildRingMonthLabels(cx, cy, radius, startMonth = 1) {
     const angle = startOffset + (index + 0.5) * segmentAngle;
     const x = cx + Math.cos(angle) * radius;
     const y = cy + Math.sin(angle) * radius;
-    return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" fill="#b4bac0" font-size="12" text-anchor="middle" dominant-baseline="middle">${MONTH_ABBREVIATIONS[monthIndex]}</text>`;
+    return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" fill="${themeColor('chartTitle')}" font-size="12" text-anchor="middle" dominant-baseline="middle">${MONTH_ABBREVIATIONS[monthIndex]}</text>`;
   }).join('');
 }
 
@@ -696,7 +698,7 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
         ? points
             .map(
               (point) =>
-                `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.1" fill="#d9e4eb" fill-opacity="0.72" />`
+                `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.1" fill="${themeColor('chartPoint')}" fill-opacity="0.72" />`
             )
             .join('')
         : '';
@@ -718,10 +720,10 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     chartMarkup = `
       ${buildAxisTitle(leftPad - 40, chartTop - 18, axisTitles(variable).raw, 'start')}
       ${buildAxisTitle(width - rightPad + 40, chartTop - 18, axisTitles(variable).anomaly, 'end')}
-      ${useAlignedDualAxisOnly ? '' : buildAxisGuideLines(rawGuideTicks, chartTop, chartHeight, rawDomain, leftPad, width - rightPad, { stroke: 'rgba(128, 134, 140, 0.14)', dashArray: '4 5' })}
-      ${buildAxisGuideLines(anomalyGuideTicks, chartTop, chartHeight, anomalyDomain, leftPad, width - rightPad, { stroke: 'rgba(165, 171, 177, 0.16)' })}
-      <line x1="${leftPad}" y1="${zeroLineY(anomalyDomain, chartTop, chartHeight).toFixed(2)}" x2="${width - rightPad}" y2="${zeroLineY(anomalyDomain, chartTop, chartHeight).toFixed(2)}" stroke="#565c62" stroke-width="1.1" />
-      ${useAlignedDualAxisOnly ? '' : `<path d="${rawPath}" fill="none" stroke="#aeb4ba" stroke-opacity="0.34" stroke-width="1.35" stroke-linejoin="round" stroke-linecap="round" />`}
+      ${useAlignedDualAxisOnly ? '' : buildAxisGuideLines(rawGuideTicks, chartTop, chartHeight, rawDomain, leftPad, width - rightPad, { stroke: themeColor('chartGridRaw'), dashArray: '4 5' })}
+      ${buildAxisGuideLines(anomalyGuideTicks, chartTop, chartHeight, anomalyDomain, leftPad, width - rightPad, { stroke: themeColor('chartGrid') })}
+      <line x1="${leftPad}" y1="${zeroLineY(anomalyDomain, chartTop, chartHeight).toFixed(2)}" x2="${width - rightPad}" y2="${zeroLineY(anomalyDomain, chartTop, chartHeight).toFixed(2)}" stroke="${themeColor('chartZero')}" stroke-width="1.1" />
+      ${useAlignedDualAxisOnly ? '' : `<path d="${rawPath}" fill="none" stroke="${themeColor('chartRawLine')}" stroke-opacity="0.34" stroke-width="1.35" stroke-linejoin="round" stroke-linecap="round" />`}
       <path d="${path}" fill="none" stroke="url(#detail-gradient-${cell.id.replace(/[^a-zA-Z0-9_-]/g, '_')})" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" />
       ${pointDots}
       ${buildAxisTicks(rawTicks, chartTop, chartHeight, rawDomain, leftPad, formatRawTick)}
@@ -761,11 +763,11 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     chartMarkup = `
       ${buildAxisTitle(leftPad - 40, chartTop - 18, axisTitles(variable).raw, 'start')}
       ${buildAxisTitle(width - rightPad + 40, chartTop - 18, axisTitles(variable).anomaly, 'end')}
-      ${useAlignedDualAxisOnly ? '' : buildAxisGuideLines(rawGuideTicks, chartTop, chartHeight, rawDomain, leftPad, width - rightPad, { stroke: 'rgba(128, 134, 140, 0.14)', dashArray: '4 5' })}
-      ${buildAxisGuideLines(anomalyGuideTicks, chartTop, chartHeight, anomalyDomain, leftPad, width - rightPad, { stroke: 'rgba(165, 171, 177, 0.16)' })}
-      <line x1="${leftPad}" y1="${zeroY.toFixed(2)}" x2="${width - rightPad}" y2="${zeroY.toFixed(2)}" stroke="#565c62" stroke-width="1.1" />
+      ${useAlignedDualAxisOnly ? '' : buildAxisGuideLines(rawGuideTicks, chartTop, chartHeight, rawDomain, leftPad, width - rightPad, { stroke: themeColor('chartGridRaw'), dashArray: '4 5' })}
+      ${buildAxisGuideLines(anomalyGuideTicks, chartTop, chartHeight, anomalyDomain, leftPad, width - rightPad, { stroke: themeColor('chartGrid') })}
+      <line x1="${leftPad}" y1="${zeroY.toFixed(2)}" x2="${width - rightPad}" y2="${zeroY.toFixed(2)}" stroke="${themeColor('chartZero')}" stroke-width="1.1" />
       ${buildBarRects(series, anomalyDomain, leftPad, chartTop, innerWidth, chartHeight, palette, colorDomain)}
-      ${useAlignedDualAxisOnly ? '' : `<path d="${rawPath}" fill="none" stroke="#aeb4ba" stroke-opacity="0.34" stroke-width="1.35" stroke-linejoin="round" stroke-linecap="round" />`}
+      ${useAlignedDualAxisOnly ? '' : `<path d="${rawPath}" fill="none" stroke="${themeColor('chartRawLine')}" stroke-opacity="0.34" stroke-width="1.35" stroke-linejoin="round" stroke-linecap="round" />`}
       ${buildAxisTicks(rawTicks, chartTop, chartHeight, rawDomain, leftPad, formatRawTick)}
       ${buildAxisTicks(anomalyTicks, chartTop, chartHeight, anomalyDomain, width - rightPad, formatAnomalyTick, { textAnchor: 'start', tickDirection: -1 })}
       ${buildXAxisBaseline(leftPad, width - rightPad, chartBottom)}
@@ -780,14 +782,14 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     };
 
     chartMarkup = `
-      <text x="16" y="24" fill="#b4bac0" font-size="12" text-anchor="start">${escapeHtml(`${variableLabel} anomaly by month (${variable === 'temperature' ? '°C' : '%'})`)}</text>
+      <text x="16" y="24" fill="${themeColor('chartTitle')}" font-size="12" text-anchor="start">${escapeHtml(`${variableLabel} anomaly by month (${variable === 'temperature' ? '°C' : '%'})`)}</text>
       <g transform="translate(0, 6)">
         ${buildBucketRingSlices(bucketedSeries, anomalyDomain, ringCx, ringCy, ringOuterRadius, ringInnerRadius, palette, 12, colorDomain)}
       </g>
       ${buildRingMonthLabels(ringCx, ringCy + 6, ringOuterRadius + 18, 1)}
-      <circle cx="${ringCx}" cy="${ringCy + 6}" r="${ringInnerRadius - 2}" fill="#121213" />
-      <text x="${ringCx}" y="${(ringCy + 10).toFixed(2)}" fill="#e4e8ea" font-size="13" text-anchor="middle">${escapeHtml(startYear)}</text>
-      <text x="${(width - 20).toFixed(2)}" y="${(ringCy + 10).toFixed(2)}" fill="#cfd3d6" font-size="13" text-anchor="end">${escapeHtml(endYear)}</text>
+      <circle cx="${ringCx}" cy="${ringCy + 6}" r="${ringInnerRadius - 2}" fill="${themeColor('ringHole')}" />
+      <text x="${ringCx}" y="${(ringCy + 10).toFixed(2)}" fill="${themeColor('chartStrongText')}" font-size="13" text-anchor="middle">${escapeHtml(startYear)}</text>
+      <text x="${(width - 20).toFixed(2)}" y="${(ringCy + 10).toFixed(2)}" fill="${themeColor('chartStrongText')}" font-size="13" text-anchor="end">${escapeHtml(endYear)}</text>
     `;
   }
 
@@ -797,7 +799,7 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     markup: `
       <div class="detail-chart__frame" data-detail-chart-frame>
         <svg class="detail-chart__svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(`${modeLabel} chart of ${variableLabel.toLowerCase()} anomalies from ${startYear} to ${endYear} for ${cell.isGlobal ? 'the global average' : formatLatLon(cell.lat, cell.lon)}`)}">
-          <rect x="0" y="0" width="${width}" height="${height}" rx="12" fill="#121213" />
+          <rect x="0" y="0" width="${width}" height="${height}" rx="12" fill="${themeColor('chartBackground')}" />
           <defs>
             <linearGradient id="detail-gradient-${cell.id.replace(/[^a-zA-Z0-9_-]/g, '_')}" x1="0%" y1="0%" x2="100%" y2="0%">
               ${series
@@ -871,11 +873,17 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     metaCopyright.innerHTML = '© Atlas Guo (2026), <a href="https://cartoguophy.com" target="_blank" rel="noreferrer">CartoGuophy.com</a>';
   }
 
-  for (const button of variableButtons) {
-    const scale = button.querySelector('.segmented__button-scale');
-    if (scale && button.dataset.variable) {
-      scale.style.setProperty('--palette-gradient', buildPaletteGradient(button.dataset.variable));
+  function paintVariableScales() {
+    for (const button of variableButtons) {
+      const scale = button.querySelector('.segmented__button-scale');
+      if (scale && button.dataset.variable) {
+        scale.style.setProperty('--palette-gradient', buildPaletteGradient(button.dataset.variable));
+      }
     }
+  }
+
+  paintVariableScales();
+  for (const button of variableButtons) {
     button.addEventListener('click', () => store.setVariable(button.dataset.variable));
   }
 
@@ -943,6 +951,38 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   periodSelect.addEventListener('change', () => {
     store.setPeriodMonths(Number(periodSelect.value));
   });
+
+  // Light/dark theme: page colours switch through CSS; palette-coloured graphics are redrawn.
+  function syncThemeToggles() {
+    const next = getTheme() === 'light' ? 'dark' : 'light';
+    for (const button of root.querySelectorAll('[data-theme-toggle]')) {
+      button.setAttribute('aria-label', `Switch to ${next} mode`);
+      button.title = `Switch to ${next} mode`;
+    }
+  }
+
+  function redrawRoniCurve() {
+    const scratch = document.createElement('div');
+    scratch.innerHTML = buildTimelineRoniMarkup(monthLabels, roniPoints);
+    const svg = scratch.querySelector('svg');
+    const current = timelineRoni.querySelector('svg');
+    if (svg && current) {
+      current.replaceWith(svg);
+    }
+  }
+
+  root.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('[data-theme-toggle]')) {
+      const theme = setTheme(getTheme() === 'light' ? 'dark' : 'light');
+      setPaletteTheme(theme);
+      clearColorCaches();
+      paintVariableScales();
+      redrawRoniCurve();
+      syncThemeToggles();
+      store.setTheme(theme);
+    }
+  });
+  syncThemeToggles();
 
   const firstYear = Number(monthLabels[0].slice(0, 4));
   const lastYear = Number(monthLabels[monthLabels.length - 1].slice(0, 4));
@@ -1231,7 +1271,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       return;
     }
     const scale = mapCanvas.width / canvasRect.width;
-    context.fillStyle = '#050607';
+    context.fillStyle = themeColor('pageBackground');
     context.fillRect(0, 0, output.width, output.height);
     context.drawImage(mapCanvas, 0, 0);
 
@@ -1494,6 +1534,9 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       mapStage?.setAttribute('aria-busy', String(active));
     },
     render(state, previousState, changedKey) {
+      if (changedKey === 'init' || changedKey === 'theme') {
+        syncThemeToggles();
+      }
       if (changedKey === 'cameraState') {
         return;
       }

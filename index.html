@@ -2,6 +2,12 @@
 <html lang="en">
 
 <head>
+  <script>
+    // Apply the saved colour theme before the first paint to avoid a flash.
+    try {
+      if (localStorage.getItem('ccv-theme') === 'light') document.documentElement.dataset.theme = 'light';
+    } catch (error) {}
+  </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Climate Change Visualized</title>

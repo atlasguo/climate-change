@@ -13,6 +13,8 @@ By Atlas Guo.
 - Pulse, column and cone glyph modes
 - Dual-handle timeline for comparing climate periods
 - RONI overlay for ENSO-related context
+- Dark and light themes; colour meanings stay the same (blue colder / red warmer, brown drier / green wetter, purple La Niña / gold El Niño) with palettes tuned for each background
+- Six basemaps and a phone layout with a tabbed bottom sheet
 
 ## Run locally
 

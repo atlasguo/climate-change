@@ -28,65 +28,6 @@
       "paint": {
         "background-color": "#050709"
       }
-    },
-    {
-      "id": "vector-ne-shaded",
-      "type": "raster",
-      "source": "ne2-shaded",
-      "layout": {
-        "visibility": "visible"
-      },
-      "paint": {
-        "raster-opacity": [
-          "interpolate",
-          [
-            "linear"
-          ],
-          [
-            "zoom"
-          ],
-          0,
-          0.15,
-          4,
-          0.03
-        ],
-        "raster-saturation": -1,
-        "raster-brightness-max": 0.18
-      }
-    },
-    {
-      "id": "vector-water",
-      "type": "fill",
-      "source": "openmaptiles",
-      "source-layer": "water",
-      "layout": {
-        "visibility": "visible"
-      },
-      "paint": {
-        "fill-color": "#181c1f",
-        "fill-opacity": 1
-      }
-    },
-    {
-      "id": "vector-landcover-ice",
-      "type": "fill",
-      "source": "openmaptiles",
-      "source-layer": "landcover",
-      "filter": [
-        "==",
-        [
-          "get",
-          "class"
-        ],
-        "ice"
-      ],
-      "layout": {
-        "visibility": "visible"
-      },
-      "paint": {
-        "fill-color": "#5f6266",
-        "fill-opacity": 0.12
-      }
     }
   ]
 }

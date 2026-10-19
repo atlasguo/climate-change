@@ -2,6 +2,7 @@ import { cellToBoundary, isValidCell } from 'h3-js';
 import { getAggregatedSeries, getBucketedSeries, getSeriesColorDomain } from '../state/selectors.js';
 import { paletteForVariable, rampColor } from '../scales/climateScales.js';
 import { buildBarRects as buildBarRectsSvg, buildBucketRingSlices, buildLinePath, zeroLineY as chartZeroLineY } from '../scales/chartRenderers.js';
+import { getTheme, themeColor } from '../theme.js';
 
 const GLYPH_VERTICAL_EDGE_INSET_RATIO = 0.18;
 const MIN_HEX_GLYPH_AREA_PX = 900;
@@ -81,7 +82,7 @@ function buildGlyphMarkup(record, metadata, state, glyphWidth, glyphHeight, valu
       </linearGradient>
     `;
     parts.push(`
-      <line x1="${padX}" y1="${zeroY.toFixed(2)}" x2="${(glyphWidth - padX).toFixed(2)}" y2="${zeroY.toFixed(2)}" stroke="rgba(255,255,255,0.4)" stroke-width="0.3" />
+      <line x1="${padX}" y1="${zeroY.toFixed(2)}" x2="${(glyphWidth - padX).toFixed(2)}" y2="${zeroY.toFixed(2)}" stroke="${themeColor('glyphZero')}" stroke-width="0.3" />
       <path d="${path}" fill="none" stroke="url(#${gradientId})" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
     `);
   } else if (mode === 'shade') {
@@ -107,7 +108,7 @@ function buildGlyphMarkup(record, metadata, state, glyphWidth, glyphHeight, valu
     const centerY = glyphHeight / 2 + 1;
     parts.push(`
       ${buildBucketRingSlices(bucketedSeries, geometryDomain, centerX, centerY, ringRadius, ringInnerRadius, palette, 12, colorDomain)}
-      <circle cx="${centerX}" cy="${centerY}" r="${Math.max(4, ringInnerRadius - 2).toFixed(2)}" fill="#111316" />
+      <circle cx="${centerX}" cy="${centerY}" r="${Math.max(4, ringInnerRadius - 2).toFixed(2)}" fill="${themeColor('glyphHole')}" />
     `);
   }
 
@@ -248,6 +249,7 @@ export function createGlyphOverlay({
     const vpd = colorScaleMode === 'viewport' ? state.viewportDomains : null;
     return [
       record.id,
+      getTheme(),
       state.variable,
       colorScaleMode,
       state.mode,

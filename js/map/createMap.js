@@ -3,6 +3,7 @@ import { cellToBoundary, cellToChildren, getRes0Cells, latLngToCell } from 'h3-j
 import { buildRenderableCells, getCommittedValueDomains, getDensityLevelForZoom } from '../state/selectors.js';
 import { getDisplayCell, getGridCellIdAt, getGridDisplayCells, getGridIndexes, getH3DisplayCells } from '../data/displayCells.js';
 import { createGlyphOverlay } from './createGlyphOverlay.js';
+import { getTheme, themeColor } from '../theme.js';
 import { applyBasemap, applyReferenceTheme, BASEMAPS, buildReferenceLayers, getBasemapTheme, REFERENCE_LABEL_LAYERS } from './basemaps.js';
 
 const H3_SOURCE_ID = 'climate-h3-cells';
@@ -421,7 +422,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     type: 'fill',
     source: H3_SOURCE_ID,
     paint: {
-      'fill-color': '#d9dee3',
+      'fill-color': themeColor('cellFill'),
       'fill-opacity': 0.02
     }
   });
@@ -432,7 +433,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     source: H3_SOURCE_ID,
     filter: ['==', ['get', 'id'], '__none__'],
     paint: {
-      'fill-color': 'rgba(233, 237, 241, 0.9)',
+      'fill-color': themeColor('hoverFill'),
       'fill-opacity': [
         'interpolate',
         ['linear'],
@@ -455,7 +456,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     source: H3_SOURCE_ID,
     filter: ['==', ['get', 'id'], '__none__'],
     paint: {
-      'fill-color': 'rgba(255, 183, 68, 0.98)',
+      'fill-color': themeColor('selectFill'),
       'fill-opacity': [
         'interpolate',
         ['linear'],
@@ -477,7 +478,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     type: 'line',
     source: H3_SOURCE_ID,
     paint: {
-      'line-color': 'rgba(214, 222, 230, 0.74)',
+      'line-color': themeColor('cellLine'),
       'line-width': [
         'interpolate',
         ['linear'],
@@ -513,7 +514,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     source: H3_SOURCE_ID,
     filter: ['==', ['get', 'id'], '__none__'],
     paint: {
-      'line-color': 'rgba(248, 250, 252, 0.98)',
+      'line-color': themeColor('hoverLine'),
       'line-width': [
         'interpolate',
         ['linear'],
@@ -537,7 +538,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     source: H3_SOURCE_ID,
     filter: ['==', ['get', 'id'], '__none__'],
     paint: {
-      'line-color': 'rgba(255, 206, 122, 1)',
+      'line-color': themeColor('selectLine'),
       'line-width': [
         'interpolate',
         ['linear'],
@@ -573,7 +574,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
       visibility: 'none'
     },
     paint: {
-      'fill-color': '#d9dee3',
+      'fill-color': themeColor('cellFill'),
       'fill-opacity': 0.001
     }
   });
@@ -587,7 +588,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     },
     filter: ['==', ['get', 'id'], '__none__'],
     paint: {
-      'fill-color': 'rgba(233, 237, 241, 0.9)',
+      'fill-color': themeColor('hoverFill'),
       'fill-opacity': 0.14
     }
   });
@@ -601,7 +602,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     },
     filter: ['==', ['get', 'id'], '__none__'],
     paint: {
-      'fill-color': 'rgba(255, 183, 68, 0.98)',
+      'fill-color': themeColor('selectFill'),
       'fill-opacity': 0.2
     }
   });
@@ -614,7 +615,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
       visibility: 'none'
     },
     paint: {
-      'line-color': 'rgba(214, 222, 230, 0.7)',
+      'line-color': themeColor('gridLine'),
       'line-width': [
         'interpolate',
         ['linear'],
@@ -653,7 +654,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     },
     filter: ['==', ['get', 'id'], '__none__'],
     paint: {
-      'line-color': 'rgba(248, 250, 252, 0.98)',
+      'line-color': themeColor('hoverLine'),
       'line-width': [
         'interpolate',
         ['linear'],
@@ -680,7 +681,7 @@ function addGeometryLayers(map, resolution, gridDegrees) {
     },
     filter: ['==', ['get', 'id'], '__none__'],
     paint: {
-      'line-color': 'rgba(255, 206, 122, 1)',
+      'line-color': themeColor('selectLine'),
       'line-width': [
         'interpolate',
         ['linear'],
@@ -765,8 +766,8 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
 
     searchStatus.hidden = !message;
     searchStatus.textContent = message;
-    searchStatus.style.color = isError ? '#d7b4b4' : '#d2d5d8';
-    searchStatus.style.borderColor = isError ? 'rgba(215, 118, 118, 0.24)' : 'rgba(166, 172, 178, 0.16)';
+    searchStatus.style.color = themeColor(isError ? 'statusError' : 'statusText');
+    searchStatus.style.borderColor = themeColor(isError ? 'statusErrorBorder' : 'statusBorder');
   }
 
   function clearSearchSelectionMarker() {
@@ -927,6 +928,10 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
         <button type="button" class="map-actions__button" data-map-action="zoom-in" aria-label="Zoom in">${iconMarkup.plus}</button>
         <button type="button" class="map-actions__button" data-map-action="zoom-out" aria-label="Zoom out">${iconMarkup.minus}</button>
         <button type="button" class="map-actions__button map-actions__button--reset" data-map-action="reset" aria-label="Reset globe view">${iconMarkup.globe}</button>
+        <button type="button" class="map-actions__button theme-toggle" data-theme-toggle aria-label="Switch to light mode">
+          <svg class="map-actions__icon theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+          <svg class="map-actions__icon theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 14.6A8 8 0 0 1 9.4 4.5a8 8 0 1 0 10.1 10.1Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+        </button>
       `;
       wrapper.addEventListener('click', (event) => {
         const button = event.target.closest('[data-map-action]');
@@ -997,8 +1002,8 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
         }
         status.textContent = 'Loading…';
         try {
-          activeBasemap = await applyBasemap(map, input.value, H3_FILL_LAYER_ID);
-          applyReferenceTheme(map, getBasemapTheme(activeBasemap));
+          activeBasemap = await applyBasemap(map, input.value, H3_FILL_LAYER_ID, getTheme());
+          applyReferenceTheme(map, getBasemapTheme(activeBasemap, getTheme()));
           status.textContent = '';
           try {
             window.localStorage.setItem(BASEMAP_STORAGE_KEY, activeBasemap);
@@ -1078,6 +1083,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
   let pointerMoveFrame = null;
   let lastPointerEvent = null;
   let displayedGeometryKey = null;
+  let mapReady = false;
 
   function usesViewportScale(state = currentAppState) {
     return state.colorScaleMode === 'viewport' || state.chartValueScaleMode === 'viewport';
@@ -1474,10 +1480,10 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     currentH3Resolution = getAdaptiveH3Resolution(map, metadata, currentDensityLevel);
     currentGridDegrees = getAdaptiveGridDegrees(map, currentDensityLevel);
     addGeometryLayers(map, currentH3Resolution, currentGridDegrees);
-    if (activeBasemap !== 'minimal') {
-      applyBasemap(map, activeBasemap, H3_FILL_LAYER_ID).catch(() => applyBasemap(map, 'minimal'));
-    }
-    addReferenceLayers(map, currentAppState, getBasemapTheme(activeBasemap));
+    applyBasemap(map, activeBasemap, H3_FILL_LAYER_ID, getTheme()).catch(() => applyBasemap(map, 'minimal', H3_FILL_LAYER_ID, getTheme()));
+    addReferenceLayers(map, currentAppState, getBasemapTheme(activeBasemap, getTheme()));
+    applyCellLayerTheme();
+    mapReady = true;
     setUnitLayerVisibility(map, currentUnit);
     applyDisplayedGeometry();
     updateLineLayerOpacity(currentAppState.strokeOpacity ?? 1);
@@ -1599,7 +1605,41 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     setPaintIfLayerExists(GRID_SELECTED_LAYER_ID, 'line-opacity', 0.98);
   }
 
+  // Cell outline, hover and selection colours follow the theme.
+  function applyCellLayerTheme() {
+    const paints = [
+      [H3_FILL_LAYER_ID, 'fill-color', 'cellFill'],
+      [GRID_FILL_LAYER_ID, 'fill-color', 'cellFill'],
+      [H3_LINE_LAYER_ID, 'line-color', 'cellLine'],
+      [GRID_LINE_LAYER_ID, 'line-color', 'gridLine'],
+      [H3_HOVERED_FILL_LAYER_ID, 'fill-color', 'hoverFill'],
+      [GRID_HOVERED_FILL_LAYER_ID, 'fill-color', 'hoverFill'],
+      [H3_HOVERED_LAYER_ID, 'line-color', 'hoverLine'],
+      [GRID_HOVERED_LAYER_ID, 'line-color', 'hoverLine'],
+      [H3_SELECTED_FILL_LAYER_ID, 'fill-color', 'selectFill'],
+      [GRID_SELECTED_FILL_LAYER_ID, 'fill-color', 'selectFill'],
+      [H3_SELECTED_LAYER_ID, 'line-color', 'selectLine'],
+      [GRID_SELECTED_LAYER_ID, 'line-color', 'selectLine']
+    ];
+    for (const [layerId, property, key] of paints) {
+      if (map.getLayer(layerId)) {
+        map.setPaintProperty(layerId, property, themeColor(key));
+      }
+    }
+  }
+
+  async function applyMapTheme() {
+    applyCellLayerTheme();
+    try {
+      activeBasemap = await applyBasemap(map, activeBasemap, H3_FILL_LAYER_ID, getTheme());
+    } catch {
+      activeBasemap = await applyBasemap(map, 'minimal', H3_FILL_LAYER_ID, getTheme());
+    }
+    applyReferenceTheme(map, getBasemapTheme(activeBasemap, getTheme()));
+  }
+
   const CONTENT_CHANGE_KEYS = new Set([
+    'theme',
     'symbol',
     'variable',
     'colorScaleMode',
@@ -1651,13 +1691,18 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
         }
       }
 
-      if (!map.loaded() || changedKey === 'init') {
+      // map.loaded() is false whenever tiles are loading, so use a one-time readiness flag.
+      if (!mapReady || changedKey === 'init') {
         return;
       }
 
       if (changedKey === 'symbol' && state.unit !== currentUnit) {
         currentUnit = state.unit ?? 'hexagon';
         setUnitLayerVisibility(map, currentUnit);
+      }
+
+      if (changedKey === 'theme') {
+        void applyMapTheme();
       }
 
       if (changedKey === 'chartValueScaleMode') {

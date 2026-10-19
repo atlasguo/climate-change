@@ -2,6 +2,7 @@ import { createMapView } from './map/createMap.js';
 import { createStore } from './state/createStore.js';
 import { loadClimateData } from './data/loadClimateData.js';
 import { createUI } from './ui/createUI.js';
+import { getTheme } from './theme.js';
 
 const SYMBOL_OPTIONS = [
   { mode: 'pulse', unit: 'grid', label: 'Pulse', meta: 'Grid', icon: 'pulse' },
@@ -322,6 +323,7 @@ export async function initApp(root) {
     root.querySelector('[data-bind="roni-range"]').textContent = `(${firstYear}–${lastYear})`;
   }
   const store = createStore(climateData.metadata);
+  store.setTheme(getTheme());
   const ui = createUI(root, store, climateData.metadata, climateData.rawCells, climateData.roni, climateData.globalCell);
   ui.setMapLoading({
     active: true,

@@ -29,6 +29,7 @@ export function createStore(metadata) {
     symbolOpacity: 0.9,
     strokeOpacity: 0.10,
     showLabels: true,
+    theme: 'dark',
     cameraState: null,
     viewportDomains: null,
     displayedH3Resolution: null,
@@ -122,6 +123,9 @@ export function createStore(metadata) {
     },
     setStrokeOpacity(strokeOpacity) {
       patch({ strokeOpacity }, 'strokeOpacity');
+    },
+    setTheme(theme) {
+      patch({ theme }, 'theme');
     },
     setShowLabels(showLabels) {
       patch({ showLabels }, 'showLabels');

@@ -1,10 +1,11 @@
-// Basemap candidates. All sources are free and need no API key.
-// Layers and sources added here are prefixed with "bm-" so they can be swapped as a group;
-// the "vector-" layers in styles/globe-dark.json form the Minimal basemap.
+// Basemaps. All sources are free and need no API key. Each basemap is built for the active
+// colour theme; layers and sources are prefixed with "bm-" so they can be swapped as a group.
 
 const PREFIX = 'bm-';
 const NASA_GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const NASA_ATTRIBUTION = '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noopener">NASA EOSDIS GIBS</a>';
+const TERRAIN_ATTRIBUTION = '<a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (Mapzen, AWS)</a>';
+const VERSATILES_ATTRIBUTION = '<a href="https://versatiles.org" target="_blank" rel="noopener">VersaTiles</a> &copy; OpenStreetMap contributors';
 
 // Colours for the shared reference layers (borders and place names) on each basemap.
 const DARK_THEME = {
@@ -15,6 +16,15 @@ const DARK_THEME = {
   cityDot: '#c3cad0',
   water: '#7f93a3',
   halo: 'rgba(6, 8, 10, 0.92)'
+};
+const LIGHT_THEME = {
+  border: 'rgba(60, 68, 76, 0.45)',
+  country: '#2b3036',
+  state: '#69727b',
+  city: '#343b42',
+  cityDot: '#343b42',
+  water: '#4f6f86',
+  halo: 'rgba(255, 255, 255, 0.92)'
 };
 const IMAGERY_THEME = {
   border: 'rgba(240, 243, 245, 0.55)',
@@ -35,145 +45,171 @@ const NIGHT_THEME = {
   halo: 'rgba(3, 5, 12, 0.92)'
 };
 
+const PAGE_BACKGROUND = { dark: '#050709', light: '#e9ecef' };
+
+const water = (fill, outline) => ({
+  id: 'bm-water',
+  type: 'fill',
+  source: 'openmaptiles',
+  'source-layer': 'water',
+  paint: { 'fill-color': fill, ...(outline ? { 'fill-outline-color': outline } : {}) }
+});
+const ice = (color, opacity) => ({
+  id: 'bm-ice',
+  type: 'fill',
+  source: 'openmaptiles',
+  'source-layer': 'landcover',
+  filter: ['==', ['get', 'class'], 'ice'],
+  paint: { 'fill-color': color, 'fill-opacity': opacity }
+});
+
 export const BASEMAPS = [
   {
     id: 'minimal',
-    labelTheme: DARK_THEME,
     label: 'Minimal',
-    description: 'Current flat dark style'
+    description: 'Flat land and water',
+    labelTheme: (theme) => (theme === 'light' ? LIGHT_THEME : DARK_THEME),
+    build: (theme) => ({
+      layers: theme === 'light'
+        ? [
+            { id: 'bm-land', type: 'background', paint: { 'background-color': '#e8ebee' } },
+            { id: 'bm-ne-relief', type: 'raster', source: 'ne2-shaded', paint: { 'raster-saturation': -1, 'raster-brightness-min': 0.7, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.25, 4, 0.08] } },
+            water('#cfd6dc'),
+            ice('#ffffff', 0.6)
+          ]
+        : [
+            { id: 'bm-land', type: 'background', paint: { 'background-color': '#050709' } },
+            { id: 'bm-ne-relief', type: 'raster', source: 'ne2-shaded', paint: { 'raster-saturation': -1, 'raster-brightness-max': 0.18, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.15, 4, 0.03] } },
+            water('#181c1f'),
+            ice('#5f6266', 0.12)
+          ]
+    })
   },
   {
     id: 'terrain',
-    labelTheme: DARK_THEME,
     label: 'Terrain',
     description: 'Grey hillshade, rivers, lakes and borders',
-    sources: {
-      'bm-dem': {
-        type: 'raster-dem',
-        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-        encoding: 'terrarium',
-        tileSize: 256,
-        maxzoom: 10,
-        attribution: '<a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles (Mapzen, AWS)</a>'
-      }
-    },
-    layers: [
-      { id: 'bm-land', type: 'background', paint: { 'background-color': '#181c20' } },
-      {
-        id: 'bm-ne-relief',
-        type: 'raster',
-        source: 'ne2-shaded',
-        paint: {
-          'raster-saturation': -1,
-          'raster-contrast': 0.2,
-          'raster-brightness-max': 0.42,
-          'raster-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0.55, 5, 0.25, 6, 0.15]
-        }
-      },
-      {
-        id: 'bm-hillshade',
-        type: 'hillshade',
-        source: 'bm-dem',
-        paint: {
-          'hillshade-exaggeration': ['interpolate', ['linear'], ['zoom'], 1, 0.75, 6, 0.55],
-          'hillshade-shadow-color': '#000000',
-          'hillshade-highlight-color': 'rgba(220, 228, 235, 0.38)',
-          'hillshade-accent-color': '#05070a',
-          'hillshade-illumination-direction': 315
-        }
-      },
-      {
-        id: 'bm-ice',
-        type: 'fill',
-        source: 'openmaptiles',
-        'source-layer': 'landcover',
-        filter: ['==', ['get', 'class'], 'ice'],
-        paint: { 'fill-color': '#9aa6b0', 'fill-opacity': 0.14 }
-      },
-      {
-        id: 'bm-water',
-        type: 'fill',
-        source: 'openmaptiles',
-        'source-layer': 'water',
-        paint: { 'fill-color': '#06090c', 'fill-outline-color': '#323a42' }
-      },
-      {
-        id: 'bm-rivers',
-        type: 'line',
-        source: 'openmaptiles',
-        'source-layer': 'waterway',
-        filter: ['==', ['get', 'class'], 'river'],
-        paint: {
-          'line-color': '#253744',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.4, 6, 1.2]
-        }
-      }
-    ]
+    labelTheme: (theme) => (theme === 'light' ? LIGHT_THEME : DARK_THEME),
+    build: (theme) => {
+      const light = theme === 'light';
+      return {
+        sources: {
+          'bm-dem': {
+            type: 'raster-dem',
+            tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+            encoding: 'terrarium',
+            tileSize: 256,
+            maxzoom: 10,
+            attribution: TERRAIN_ATTRIBUTION
+          }
+        },
+        layers: [
+          { id: 'bm-land', type: 'background', paint: { 'background-color': light ? '#e6e9ec' : '#181c20' } },
+          {
+            id: 'bm-ne-relief',
+            type: 'raster',
+            source: 'ne2-shaded',
+            paint: light
+              ? { 'raster-saturation': -1, 'raster-contrast': 0.1, 'raster-brightness-min': 0.55, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0.5, 5, 0.25, 6, 0.15] }
+              : { 'raster-saturation': -1, 'raster-contrast': 0.2, 'raster-brightness-max': 0.42, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0.55, 5, 0.25, 6, 0.15] }
+          },
+          {
+            id: 'bm-hillshade',
+            type: 'hillshade',
+            source: 'bm-dem',
+            paint: light
+              ? {
+                  'hillshade-exaggeration': ['interpolate', ['linear'], ['zoom'], 1, 0.55, 6, 0.4],
+                  'hillshade-shadow-color': '#4a5560',
+                  'hillshade-highlight-color': 'rgba(255, 255, 255, 0.7)',
+                  'hillshade-accent-color': '#6b7680',
+                  'hillshade-illumination-direction': 315
+                }
+              : {
+                  'hillshade-exaggeration': ['interpolate', ['linear'], ['zoom'], 1, 0.75, 6, 0.55],
+                  'hillshade-shadow-color': '#000000',
+                  'hillshade-highlight-color': 'rgba(220, 228, 235, 0.38)',
+                  'hillshade-accent-color': '#05070a',
+                  'hillshade-illumination-direction': 315
+                }
+          },
+          light ? ice('#ffffff', 0.55) : ice('#9aa6b0', 0.14),
+          light ? water('#c4d0da', '#9fb0be') : water('#06090c', '#323a42'),
+          {
+            id: 'bm-rivers',
+            type: 'line',
+            source: 'openmaptiles',
+            'source-layer': 'waterway',
+            filter: ['==', ['get', 'class'], 'river'],
+            paint: {
+              'line-color': light ? '#8fa9bd' : '#253744',
+              'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.4, 6, 1.2]
+            }
+          }
+        ]
+      };
+    }
   },
   {
     id: 'relief',
-    labelTheme: IMAGERY_THEME,
     label: 'Relief',
     description: 'NASA Blue Marble shaded relief with ocean depth',
-    sources: {
-      'bm-relief': {
-        type: 'raster',
-        tiles: [`${NASA_GIBS}/BlueMarble_ShadedRelief_Bathymetry/default/2004-08-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg`],
-        tileSize: 256,
-        maxzoom: 8,
-        attribution: NASA_ATTRIBUTION
-      }
-    },
-    layers: [
-      {
-        id: 'bm-relief',
-        type: 'raster',
-        source: 'bm-relief',
-        paint: { 'raster-saturation': -0.45, 'raster-brightness-max': 0.5, 'raster-contrast': 0.05 }
-      }
-    ]
+    labelTheme: () => IMAGERY_THEME,
+    build: () => ({
+      sources: {
+        'bm-relief': {
+          type: 'raster',
+          tiles: [`${NASA_GIBS}/BlueMarble_ShadedRelief_Bathymetry/default/2004-08-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg`],
+          tileSize: 256,
+          maxzoom: 8,
+          attribution: NASA_ATTRIBUTION
+        }
+      },
+      layers: [
+        { id: 'bm-relief', type: 'raster', source: 'bm-relief', paint: { 'raster-saturation': -0.45, 'raster-brightness-max': 0.5, 'raster-contrast': 0.05 } }
+      ]
+    })
   },
   {
     id: 'night',
-    labelTheme: NIGHT_THEME,
     label: 'Night lights',
     description: 'NASA Black Marble city lights',
-    sources: {
-      'bm-night': {
-        type: 'raster',
-        tiles: [`${NASA_GIBS}/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png`],
-        tileSize: 256,
-        maxzoom: 8,
-        attribution: NASA_ATTRIBUTION
-      }
+    labelTheme: () => NIGHT_THEME,
+    build: () => ({
+      sources: {
+        'bm-night': {
+          type: 'raster',
+          tiles: [`${NASA_GIBS}/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png`],
+          tileSize: 256,
+          maxzoom: 8,
+          attribution: NASA_ATTRIBUTION
+        }
+      },
+      layers: [
+        { id: 'bm-night', type: 'raster', source: 'bm-night', paint: { 'raster-saturation': -0.3, 'raster-brightness-max': 0.85 } }
+      ]
+    })
+  },
+  {
+    id: 'openfreemap',
+    label: 'OpenFreeMap',
+    description: 'OpenFreeMap vector style (Dark or Positron)',
+    labelTheme: (theme) => (theme === 'light' ? LIGHT_THEME : DARK_THEME),
+    styleUrl: { dark: 'https://tiles.openfreemap.org/styles/dark', light: 'https://tiles.openfreemap.org/styles/positron' }
+  },
+  {
+    id: 'versatiles',
+    label: 'VersaTiles',
+    description: 'VersaTiles vector style (Colorful dark or light)',
+    labelTheme: (theme) => (theme === 'light' ? LIGHT_THEME : DARK_THEME),
+    styleUrl: {
+      dark: 'https://tiles.versatiles.org/assets/styles/colorful-dark/style.json',
+      light: 'https://tiles.versatiles.org/assets/styles/colorful/style.json'
     },
-    layers: [
-      {
-        id: 'bm-night',
-        type: 'raster',
-        source: 'bm-night',
-        paint: { 'raster-saturation': -0.3, 'raster-brightness-max': 0.85 }
-      }
-    ]
-  },
-  {
-    id: 'openfreemap-dark',
-    labelTheme: DARK_THEME,
-    label: 'OpenFreeMap Dark',
-    description: 'OpenFreeMap dark vector style',
-    styleUrl: 'https://tiles.openfreemap.org/styles/dark'
-  },
-  {
-    id: 'versatiles-dark',
-    labelTheme: DARK_THEME,
-    label: 'VersaTiles Dark',
-    description: 'VersaTiles colorful-dark vector style',
-    styleUrl: 'https://tiles.versatiles.org/assets/styles/colorful-dark/style.json',
-    attribution: '<a href="https://versatiles.org" target="_blank" rel="noopener">VersaTiles</a> &copy; OpenStreetMap contributors'
+    attribution: VERSATILES_ATTRIBUTION
   }
 ];
 
-const MINIMAL_LAYER_PREFIX = 'vector-';
 const externalStyleCache = new Map();
 
 function usesSpriteOrPattern(layer) {
@@ -181,12 +217,13 @@ function usesSpriteOrPattern(layer) {
   return text.includes('pattern') || text.includes('icon-image');
 }
 
-// Keeps the fills and lines of a third-party style; drops its labels and icons because the
-// app draws its own labels with a different glyph server and no sprite sheet.
-async function loadExternalBasemap(basemap) {
-  if (!externalStyleCache.has(basemap.id)) {
-    externalStyleCache.set(basemap.id, (async () => {
-      const response = await fetch(basemap.styleUrl);
+// Keeps the fills and lines of a third-party style; drops its labels, icons and borders because
+// the app draws its own reference layers with its own glyphs and no sprite sheet.
+async function loadExternalBasemap(basemap, theme) {
+  const url = basemap.styleUrl[theme] ?? basemap.styleUrl.dark;
+  if (!externalStyleCache.has(url)) {
+    externalStyleCache.set(url, (async () => {
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Basemap style failed to load (HTTP ${response.status}).`);
       }
@@ -207,9 +244,12 @@ async function loadExternalBasemap(basemap) {
           ...(layer.source ? { source: sourceName(layer.source) } : {})
         }));
       return { sources, layers };
-    })());
+    })().catch((error) => {
+      externalStyleCache.delete(url);
+      throw error;
+    }));
   }
-  return externalStyleCache.get(basemap.id);
+  return externalStyleCache.get(url);
 }
 
 function removeCurrentBasemap(map) {
@@ -226,26 +266,20 @@ function removeCurrentBasemap(map) {
   }
 }
 
-function setMinimalVisibility(map, visible) {
-  for (const layer of map.getStyle().layers) {
-    if (layer.id.startsWith(MINIMAL_LAYER_PREFIX)) {
-      map.setLayoutProperty(layer.id, 'visibility', visible ? 'visible' : 'none');
-    }
-  }
-}
-
 let applySequence = 0;
 
-export async function applyBasemap(map, basemapId, beforeLayerId) {
+export async function applyBasemap(map, basemapId, beforeLayerId, theme = 'dark') {
   const basemap = BASEMAPS.find((item) => item.id === basemapId) ?? BASEMAPS[0];
   const sequence = ++applySequence;
-  const definition = basemap.styleUrl ? await loadExternalBasemap(basemap) : basemap;
+  const definition = basemap.styleUrl ? await loadExternalBasemap(basemap, theme) : basemap.build(theme);
   if (sequence !== applySequence) {
     return basemap.id;
   }
 
   removeCurrentBasemap(map);
-  setMinimalVisibility(map, basemap.id === 'minimal');
+  if (map.getLayer('vector-background')) {
+    map.setPaintProperty('vector-background', 'background-color', PAGE_BACKGROUND[theme] ?? PAGE_BACKGROUND.dark);
+  }
   for (const [id, source] of Object.entries(definition.sources ?? {})) {
     map.addSource(id, source);
   }
@@ -400,6 +434,6 @@ export function applyReferenceTheme(map, theme = DARK_THEME) {
   }
 }
 
-export function getBasemapTheme(basemapId) {
-  return (BASEMAPS.find((item) => item.id === basemapId) ?? BASEMAPS[0]).labelTheme ?? DARK_THEME;
+export function getBasemapTheme(basemapId, theme = 'dark') {
+  return (BASEMAPS.find((item) => item.id === basemapId) ?? BASEMAPS[0]).labelTheme(theme);
 }
