@@ -360,17 +360,19 @@ function buildTimelineRoniMarkup(monthLabels, roniPoints) {
   const eventLabels = findStrongEnsoEpisodes(roniPoints)
     .map(({ phase, peak }) => {
       const index = monthIndexForLabel(peak.monthLabel);
-      if (index === undefined) {
+      const yearStartIndex = monthIndexForLabel(`${peak.monthLabel.slice(0, 4)}-01`);
+      if (index === undefined || yearStartIndex === undefined) {
         return '';
       }
-      const percent = (index / Math.max(1, monthLabels.length - 1)) * 100;
+      // Horizontally centred on the peak year; vertically at the peak value.
+      const percent = ((yearStartIndex + 6) / Math.max(1, monthLabels.length)) * 100;
       const clamped = Math.max(domain[0], Math.min(domain[1], peak.anomaly));
       const peakY = baselineY - (clamped / domain[1]) * amplitude;
       // La Niña labels sit below the axis tick marks.
       const y = phase === 'la-nina' ? Math.max(peakY, baselineY + 14) : peakY;
       const edge = percent < 1.5 ? ' is-start' : percent > 98.5 ? ' is-end' : '';
       const phaseName = phase === 'el-nino' ? 'El Niño' : 'La Niña';
-      return `<span class="timeline-event timeline-event--${phase}${edge}" style="left:${percent.toFixed(3)}%;top:${y.toFixed(1)}px" title="${phaseName} peak ${escapeHtml(peak.monthLabel)}, RONI ${formatNumber(peak.anomaly, 1, { signed: true })}">${escapeHtml(peak.monthLabel.slice(0, 4))}</span>`;
+      return `<span class="timeline-event timeline-event--${phase}${edge}" data-year="${escapeHtml(peak.monthLabel.slice(0, 4))}" style="left:${percent.toFixed(3)}%;top:${y.toFixed(1)}px" title="${phaseName} peak ${escapeHtml(peak.monthLabel)}, RONI ${formatNumber(peak.anomaly, 1, { signed: true })}">${escapeHtml(peak.monthLabel.slice(0, 4))}</span>`;
     })
     .join('');
 
@@ -913,16 +915,29 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     }
   }
 
+  // Tick marks sit on year boundaries; year labels are centred on the year they name.
+  const halfYearRatio = 6 / Math.max(1, monthLabels.length);
   timelineRuler.innerHTML = tickItems
-    .map(
-      (tick) =>
-        `<span class="timeline-axis__tick${tick.annual ? ' is-annual' : ''}${tick.medium ? ' is-medium' : ''}${tick.major ? ' is-major' : ''}" data-year="${tick.year}" style="left:${(tick.ratio * 100).toFixed(3)}%"><i></i>${tick.label ? `<em>${tick.label}</em>` : ''}</span>`
-    )
+    .map((tick) => {
+      const kind = `${tick.medium ? ' is-medium' : ''}${tick.major ? ' is-major' : ''}`;
+      const mark = `<span class="timeline-axis__tick${kind}" data-year="${tick.year}" style="left:${(tick.ratio * 100).toFixed(3)}%"><i></i></span>`;
+      const label = tick.label
+        ? `<span class="timeline-axis__label${kind}" data-year="${tick.year}" style="left:${((tick.ratio + halfYearRatio) * 100).toFixed(3)}%">${tick.label}</span>`
+        : '';
+      return mark + label;
+    })
     .join('');
 
   timelineRoni.innerHTML = buildTimelineRoniMarkup(monthLabels, roniPoints);
+  // Event labels live above the range masks so each label is dimmed as a whole.
+  const timelineEvents = timelineRoni.querySelector('.timeline-events');
+  timelineEvents?.setAttribute('aria-hidden', 'true');
+  timelineRoni.parentElement.append(timelineEvents ?? document.createElement('div'));
   timelineRoniToggle.addEventListener('change', () => {
     timelineRoni.hidden = !timelineRoniToggle.checked;
+    if (timelineEvents) {
+      timelineEvents.hidden = !timelineRoniToggle.checked;
+    }
   });
   periodSelect.addEventListener('change', () => {
     store.setPeriodMonths(Number(periodSelect.value));
@@ -985,9 +1000,9 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     timelineMaskAfter.style.left = `${(endRatio * 100).toFixed(3)}%`;
     timelineMaskBefore.hidden = startRatio <= 0;
     timelineMaskAfter.hidden = endRatio >= 1;
-    for (const tick of timelineRuler.children) {
-      const tickYear = Number(tick.dataset.year);
-      tick.classList.toggle('is-outside', tickYear < startYear || tickYear > endYear);
+    for (const label of [...timelineRuler.children, ...(timelineEvents?.children ?? [])]) {
+      const labelYear = Number(label.dataset.year);
+      label.classList.toggle('is-outside', labelYear < startYear || labelYear > endYear);
     }
 
     for (const [key, handle] of Object.entries(timelineHandles)) {

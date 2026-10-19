@@ -1392,7 +1392,7 @@ input[type='range'] {
 
 .timeline-axis {
   position: relative;
-  margin-top: 4px;
+  margin-top: 22px;
   padding: 42px 0 10px;
 }
 
@@ -1439,15 +1439,23 @@ input[type='range'] {
   right: 0;
 }
 
-.timeline-axis__tick.is-outside {
+.timeline-axis__tick.is-outside,
+.timeline-axis__label.is-outside {
   opacity: 0.3;
 }
 
 .timeline-events {
   position: absolute;
-  inset: 0;
-  z-index: 2;
+  left: 0;
+  right: 0;
+  top: 1px;
+  height: 76px;
+  z-index: 9;
   pointer-events: none;
+}
+
+.timeline-event.is-outside {
+  opacity: 0.3;
 }
 
 .timeline-event {
@@ -1457,7 +1465,7 @@ input[type='range'] {
   line-height: 1;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 3px rgba(5, 6, 7, 0.9);
+  text-shadow: 0 0 2px #0e0e0f, 0 0 4px #0e0e0f;
 }
 
 .timeline-event--el-nino {
@@ -1508,13 +1516,14 @@ input[type='range'] {
   background: rgba(196, 201, 206, 0.38);
 }
 
-.timeline-axis__tick em {
-  display: block;
-  margin-top: 30px;
-  font-style: normal;
+.timeline-axis__label {
+  position: absolute;
+  top: 39px;
+  transform: translateX(-50%);
   font-size: var(--text-xs);
   white-space: nowrap;
   color: #a8afb6;
+  pointer-events: none;
 }
 
 .timeline-axis__tick.is-medium i {
@@ -1523,7 +1532,7 @@ input[type='range'] {
   background: rgba(215, 220, 225, 0.62);
 }
 
-.timeline-axis__tick.is-medium em {
+.timeline-axis__label.is-medium {
   color: #c7cdd3;
   font-weight: 500;
 }
@@ -1534,7 +1543,7 @@ input[type='range'] {
   background: rgba(245, 248, 251, 0.92);
 }
 
-.timeline-axis__tick.is-major em {
+.timeline-axis__label.is-major {
   color: #f2f5f8;
   font-weight: 600;
 }
@@ -1820,7 +1829,7 @@ input[type='range'] {
 .timeline-handle {
   --handle-color: #f2f5f8;
   position: absolute;
-  top: 0;
+  top: -18px;
   bottom: 40px;
   z-index: 8;
   width: 24px;
