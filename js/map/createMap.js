@@ -1082,6 +1082,11 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
   map.touchZoomRotate.disableRotation();
   map.doubleClickZoom.enable();
   map.scrollZoom.enable();
+  map.keyboard.disableRotation();
+  const mapCanvas = map.getCanvas();
+  mapCanvas.setAttribute('aria-label', 'Interactive globe');
+  mapCanvas.setAttribute('aria-describedby', 'map-keyboard-help');
+  mapCanvas.setAttribute('role', 'application');
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
   function setSearchStatus(message = '', isError = false) {
@@ -1556,6 +1561,21 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     }
   }
 
+  function handleMapKeydown(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      const center = map.getCenter();
+      const cellId = displayedCellIdAt(center.lat, center.lng);
+      if (cellId && getDisplayCell(cellId)) {
+        event.preventDefault();
+        store.selectCell(cellId, { lat: center.lat, lon: center.lng });
+      }
+    } else if (event.key === 'Escape' && currentAppState.selectedCell) {
+      event.preventDefault();
+      clearSearchSelectionMarker();
+      store.selectCell(null);
+    }
+  }
+
   // Keeps the selection on the cell that contains the selection anchor whenever the
   // displayed level (zoom-dependent resolution or hexagon/grid unit) changes.
   function remapSelectionToDisplayedLevel() {
@@ -1691,6 +1711,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     map.on('mousemove', handleMapPointerMove);
     map.on('click', handleMapClick);
     map.on('mouseout', clearMapHover);
+    mapCanvas.addEventListener('keydown', handleMapKeydown);
     glyphOverlay.setOpacity(store.getState().symbolOpacity ?? 0.9);
     map.once('idle', () => {
       commitFullRefresh();

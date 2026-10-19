@@ -71,8 +71,8 @@ function buildSymbolOptionsMarkup(unit) {
 
 const SHELL = `
   <div class="app-shell">
-    <div class="app-shell__backdrop"></div>
-    <aside class="panel panel--left" data-panel="controls">
+    <div class="app-shell__backdrop" aria-hidden="true"></div>
+    <aside class="panel panel--left" data-panel="controls" aria-label="Controls">
       <section class="panel-section panel-section--title">
         <div class="title-block">
           <h1 class="panel-title" data-bind="app-title">Climate Change Visualized</h1>
@@ -81,9 +81,7 @@ const SHELL = `
 
       <section class="panel-section">
         <div class="section-head">
-          <div>
-            <p class="panel-label">Variable</p>
-          </div>
+          <h2 class="panel-label">Variable</h2>
         </div>
         <div class="segmented">
           <button class="segmented__button segmented__button--with-scale" data-variable="temperature">
@@ -119,8 +117,8 @@ const SHELL = `
         <fieldset class="legend__radio-group legend__radio-group--panel" data-color-scale-group>
           <legend class="legend__radio-group-label">Color scale</legend>
           <div class="legend__radio-options">
-            <label class="legend__radio"><input type="radio" name="panel-color-scale" value="local" checked /><span>Individual</span></label>
-            <label class="legend__radio"><input type="radio" name="panel-color-scale" value="viewport" /><span>Extent</span></label>
+            <label class="legend__radio"><input type="radio" name="panel-color-scale" value="local" checked /><span>Per cell</span></label>
+            <label class="legend__radio"><input type="radio" name="panel-color-scale" value="viewport" /><span>In view</span></label>
             <label class="legend__radio"><input type="radio" name="panel-color-scale" value="global" /><span>Global</span></label>
           </div>
         </fieldset>
@@ -128,18 +126,16 @@ const SHELL = `
 
       <section class="panel-section">
         <div class="section-head">
-          <div>
-            <p class="panel-label">Symbol</p>
-          </div>
+          <h2 class="panel-label">Symbol</h2>
         </div>
         <div class="symbol-grid">
-          <span class="symbol-grid__unit-info"><span class="symbol-grid__unit-label">Unit:</span><span data-bind="symbol-unit-info"></span></span>
+          <span class="symbol-grid__unit-info"><span class="symbol-grid__unit-label">Cell size</span><span data-bind="symbol-unit-info"></span></span>
           <span class="symbol-grid__col-header">Pulse</span>
           <span class="symbol-grid__col-header">Column</span>
           <span class="symbol-grid__col-header">Cone</span>
-          <span class="symbol-grid__freq">Yearly</span>
-          <span class="symbol-grid__freq">Yearly</span>
-          <span class="symbol-grid__freq">Monthly</span>
+          <span class="symbol-grid__freq">By period</span>
+          <span class="symbol-grid__freq">By period</span>
+          <span class="symbol-grid__freq">By month</span>
           <span class="symbol-grid__row-header">Grid</span>
           ${buildSymbolOptionsMarkup('grid')}
           <span class="symbol-grid__row-header">Hexagon</span>
@@ -162,7 +158,7 @@ const SHELL = `
           </div>
           <div class="opacity-control">
             <label class="opacity-control__label" for="symbol-stroke-slider">
-              <span id="symbol-stroke-label">Cell Outline</span>
+              <span id="symbol-stroke-label">Cell outline</span>
               <span data-bind="symbol-stroke-value">10%</span>
             </label>
             <input class="opacity-control__slider" type="range" min="0" max="100" step="5" value="10" id="symbol-stroke-slider" aria-labelledby="symbol-stroke-label" data-symbol-stroke />
@@ -172,29 +168,19 @@ const SHELL = `
 
       <section class="panel-section panel-section--meta">
         <div class="metadata-list">
-          <div class="metadata-list__row"><span>Data Source</span><div class="metadata-list__value" data-bind="meta-datasource"></div></div>
-          <div class="metadata-list__row"><span>Copyright</span><div class="metadata-list__value" data-bind="meta-copyright"></div></div>
+          <div class="metadata-list__row"><h2 class="metadata-list__label">Data sources</h2><div class="metadata-list__value" data-bind="meta-datasource"></div></div>
+          <div class="metadata-list__row"><h2 class="metadata-list__label">Copyright</h2><div class="metadata-list__value" data-bind="meta-copyright"></div></div>
         </div>
       </section>
     </aside>
 
     <main class="map-stage">
-      <div id="map" class="map-canvas"></div>
-      <div class="map-loading" data-map-loading hidden aria-hidden="true">
-        <div class="map-loading__card" role="status" aria-live="polite" aria-atomic="true">
-          <div class="map-loading__halo" aria-hidden="true"></div>
-          <div class="map-loading__copy">
-            <strong class="map-loading__title" data-map-loading-title>Updating globe</strong>
-            <span class="map-loading__detail" data-map-loading-detail>Rendering climate layers</span>
-          </div>
-        </div>
-      </div>
       <form class="map-search" data-map-search-form>
         <input
           class="map-search__input"
           data-map-search-input
           type="search"
-          placeholder="Search any place worldwide"
+          placeholder="Search for a place"
           aria-label="Search for a place"
           autocomplete="off"
           spellcheck="false"
@@ -205,76 +191,86 @@ const SHELL = `
             <path d="M15.4 15.4 19 19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
           </svg>
         </button>
-        <div class="map-search__status" data-map-search-status hidden></div>
-        <div class="map-search__filters">
+        <div class="map-search__status" data-map-search-status role="status" aria-live="polite" hidden></div>
+        <div class="map-search__filters" role="group" aria-label="Map labels">
           <label class="map-search__filter-item">
             <input type="checkbox" data-show-country-border class="map-search__checkbox" />
-            <span class="map-search__filter-label">Country Border</span>
+            <span class="map-search__filter-label">Country borders</span>
           </label>
           <label class="map-search__filter-item">
             <input type="checkbox" data-show-country-label class="map-search__checkbox" />
-            <span class="map-search__filter-label">Country</span>
+            <span class="map-search__filter-label">Country names</span>
           </label>
           <label class="map-search__filter-item">
             <input type="checkbox" data-show-city-label class="map-search__checkbox" />
-            <span class="map-search__filter-label">City</span>
+            <span class="map-search__filter-label">City names</span>
           </label>
         </div>
       </form>
+      <div id="map" class="map-canvas"></div>
+      <p class="sr-only" id="map-keyboard-help">Use the arrow keys to pan and the plus and minus keys to zoom. Press Enter to select the cell at the center of the map and Escape to clear the selection.</p>
+      <div class="map-crosshair" aria-hidden="true"></div>
+      <div class="map-loading" data-map-loading hidden aria-hidden="true">
+        <div class="map-loading__card" role="status" aria-live="polite" aria-atomic="true">
+          <div class="map-loading__halo" aria-hidden="true"></div>
+          <div class="map-loading__copy">
+            <strong class="map-loading__title" data-map-loading-title>Updating globe</strong>
+            <span class="map-loading__detail" data-map-loading-detail>Rendering climate layers</span>
+          </div>
+        </div>
+      </div>
 
-      <div class="tooltip" data-tooltip hidden></div>
 
       <button class="mobile-toggle mobile-toggle--controls" data-mobile-toggle="controls">Controls</button>
       <button class="mobile-toggle mobile-toggle--details" data-mobile-toggle="details">Details</button>
     </main>
 
-    <aside class="panel panel--right" data-panel="details">
+    <aside class="panel panel--right" data-panel="details" aria-label="Details">
       <section class="panel-section">
         <div class="section-head">
-          <p class="panel-label">Details</p>
+          <h2 class="panel-label">Details</h2>
         </div>
         <div data-detail-summary class="detail-summary"></div>
+        <p class="sr-only" data-selection-announcer aria-live="polite" aria-atomic="true"></p>
       </section>
 
       <section class="panel-section">
         <div class="section-head">
-          <div>
-            <p class="panel-label">Chart</p>
-          </div>
+          <h2 class="panel-label">Chart</h2>
         </div>
         <div data-detail-chart class="detail-chart"></div>
         <div class="detail-export-actions">
-          <button class="ghost-button" type="button" data-action="export-map">Export Map</button>
-          <button class="ghost-button" type="button" data-action="export-chart">Export Chart</button>
+          <button class="ghost-button" type="button" data-action="export-map">Export map</button>
+          <button class="ghost-button" type="button" data-action="export-chart">Export chart</button>
         </div>
       </section>
     </aside>
 
-    <footer class="timeline-dock">
+    <section class="timeline-dock" aria-labelledby="timeline-heading">
       <div class="timeline-dock__header">
-        <p class="panel-label">Timeline</p>
+        <h2 class="panel-label" id="timeline-heading">Timeline</h2>
         <div class="timeline-dock__actions">
           <div class="timeline-editor">
-            <label class="timeline-editor__group">
-              <span>Start year</span>
+            <div class="timeline-editor__group" role="group" aria-labelledby="start-year-label">
+              <span id="start-year-label">Start year</span>
               <div class="timeline-editor__controls">
-                <button type="button" class="timeline-editor__step" data-range-step="a-year:-1" aria-label="Decrease start year">-</button>
+                <button type="button" class="timeline-editor__step" data-range-step="a-year:-1" aria-label="Decrease start year">&minus;</button>
                 <input type="text" class="timeline-editor__input timeline-editor__input--year" data-range-input="a-year" inputmode="numeric" spellcheck="false" aria-label="Start year" />
                 <button type="button" class="timeline-editor__step" data-range-step="a-year:1" aria-label="Increase start year">+</button>
               </div>
-            </label>
-            <label class="timeline-editor__group">
-              <span>End year</span>
+            </div>
+            <div class="timeline-editor__group" role="group" aria-labelledby="end-year-label">
+              <span id="end-year-label">End year</span>
               <div class="timeline-editor__controls">
-                <button type="button" class="timeline-editor__step" data-range-step="b-year:-1" aria-label="Decrease end year">-</button>
+                <button type="button" class="timeline-editor__step" data-range-step="b-year:-1" aria-label="Decrease end year">&minus;</button>
                 <input type="text" class="timeline-editor__input timeline-editor__input--year" data-range-input="b-year" inputmode="numeric" spellcheck="false" aria-label="End year" />
                 <button type="button" class="timeline-editor__step" data-range-step="b-year:1" aria-label="Increase end year">+</button>
               </div>
-            </label>
+            </div>
           </div>
           <label class="timeline-period">
             <span>Period</span>
-            <select class="timeline-period__select" data-period-select aria-label="Data period">
+            <select class="timeline-period__select" data-period-select>
               <option value="120">10 years</option>
               <option value="60">5 years</option>
               <option value="24">2 years</option>
@@ -283,7 +279,7 @@ const SHELL = `
               <option value="1">1 month</option>
             </select>
           </label>
-          <button class="ghost-button" data-action="reset-ranges">Reset temporal range</button>
+          <button class="ghost-button" type="button" data-action="reset-ranges">Reset time range</button>
           <div class="timeline-toggle timeline-toggle--roni">
             <label class="timeline-toggle__control">
               <input type="checkbox" data-timeline-oni-toggle checked />
@@ -301,12 +297,12 @@ const SHELL = `
             <div class="timeline-axis__selection" data-timeline-selection></div>
             <div class="timeline-axis__oni" data-timeline-oni></div>
             <div class="timeline-axis__ticks" data-timeline-ruler></div>
-            <input type="range" data-range="a-point" class="timeline-axis__slider timeline-axis__slider--a" />
-            <input type="range" data-range="b-point" class="timeline-axis__slider timeline-axis__slider--b" />
+            <input type="range" data-range="a-point" class="timeline-axis__slider timeline-axis__slider--a" aria-label="Start of time range" />
+            <input type="range" data-range="b-point" class="timeline-axis__slider timeline-axis__slider--b" aria-label="End of time range" />
           </div>
         </section>
       </div>
-    </footer>
+    </section>
   </div>
 `;
 

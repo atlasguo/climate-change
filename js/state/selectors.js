@@ -34,6 +34,16 @@ function buildDomainCacheKey(domainOverrides = {}) {
 }
 
 const monthIndexLookup = new WeakMap();
+const monthOfYearLookup = new WeakMap();
+
+function getMonthOfYear(metadata) {
+  let months = monthOfYearLookup.get(metadata.monthLabels);
+  if (!months) {
+    months = Uint8Array.from(metadata.monthLabels, (label) => Number(label.slice(5, 7)) - 1);
+    monthOfYearLookup.set(metadata.monthLabels, months);
+  }
+  return months;
+}
 
 export function getMonthIndex(metadata, monthLabel) {
   let lookup = monthIndexLookup.get(metadata.monthLabels);
@@ -129,26 +139,21 @@ export function getBucketedSeries(cell, metadata, state, variable) {
   const buckets = [];
   const periodMonths = Math.max(12, state.periodMonths ?? 12);
 
+  const monthOfYear = getMonthOfYear(metadata);
+
+  // Each ring segment is a calendar month (Jan..Dec) averaged over the years in the bucket.
   for (let bucketStart = startIndex; bucketStart <= endIndex; bucketStart += periodMonths) {
     const bucketEnd = Math.min(endIndex, bucketStart + periodMonths - 1);
-    const bucketLength = bucketEnd - bucketStart + 1;
-    const segmentBins = Array.from({ length: 12 }, () => []);
+    const totals = new Array(12).fill(0);
+    const counts = new Array(12).fill(0);
 
     for (let index = bucketStart; index <= bucketEnd; index += 1) {
-      const offset = index - bucketStart;
-      const segmentIndex = Math.min(11, Math.floor((offset * 12) / Math.max(1, bucketLength)));
-      const value = variable === 'temperature' ? source[index] : source[index] * 100;
-      segmentBins[segmentIndex].push(value);
+      const month = monthOfYear[index];
+      totals[month] += variable === 'temperature' ? source[index] : source[index] * 100;
+      counts[month] += 1;
     }
 
-    buckets.push(
-      segmentBins.map((bin) => {
-        if (!bin.length) {
-          return null;
-        }
-        return bin.reduce((sum, value) => sum + value, 0) / bin.length;
-      })
-    );
+    buckets.push(totals.map((total, month) => (counts[month] ? total / counts[month] : null)));
   }
 
   const normalized = buckets;

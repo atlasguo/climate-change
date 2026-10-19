@@ -137,6 +137,9 @@ export function createGlyphOverlay({
 }) {
   const overlay = document.createElement('div');
   overlay.className = 'glyph-overlay';
+  // Glyphs mirror the map for pointer users; keyboard and screen reader users select cells
+  // through the map canvas and search instead.
+  overlay.setAttribute('aria-hidden', 'true');
   host.appendChild(overlay);
 
   const markerMap = new Map();
@@ -270,10 +273,8 @@ export function createGlyphOverlay({
   }
 
   function buildMarker(record) {
-    const marker = document.createElement('button');
-    marker.type = 'button';
+    const marker = document.createElement('div');
     marker.className = 'glyph-card';
-    marker.tabIndex = -1;
     marker.dataset.id = record.id;
 
     const setMarkerHover = (event) => {

@@ -8,7 +8,7 @@ import {
   paletteForVariable,
   rampColor,
   RONI_PALETTE,
-  summarizeValue
+  formatNumber
 } from '../scales/climateScales.js';
 import { buildBarRects, buildBucketRingSlices, buildLinePoints, zeroLineY } from '../scales/chartRenderers.js';
 import { getDisplayCell } from '../data/displayCells.js';
@@ -21,7 +21,7 @@ function formatCoordinate(value, axis) {
   }
   const absolute = Math.abs(value).toFixed(2);
   const suffix = axis === 'lat' ? (value < 0 ? 'S' : 'N') : value < 0 ? 'W' : 'E';
-  return `${absolute}°${suffix}`;
+  return `${absolute}° ${suffix}`;
 }
 
 function formatLatLon(lat, lon) {
@@ -43,10 +43,7 @@ function buildTickFormatter(ticks, { signed = false } = {}) {
       decimals = Math.max(0, Math.ceil(-Math.log10(step)));
     }
   }
-  const format = (value, precision) => {
-    const text = (Math.abs(value) < 0.5 * 10 ** -precision ? 0 : value).toFixed(precision);
-    return signed && value > 0 && Number(text) !== 0 ? `+${text}` : text;
-  };
+  const format = (value, precision) => formatNumber(Math.abs(value) < 0.5 * 10 ** -precision ? 0 : value, precision, { signed });
   while (decimals < 3 && new Set(ticks.map((value) => format(value, decimals))).size < ticks.length) {
     decimals += 1;
   }
@@ -62,7 +59,7 @@ function buildAxisTicks(ticks, top, trackHeight, domain, x, formatter, { textAnc
       const textX = x - 4 * tickDirection;
       return `
         <line x1="${x}" y1="${y.toFixed(2)}" x2="${x2}" y2="${y.toFixed(2)}" stroke="#5b6066" stroke-width="1" />
-        <text x="${textX}" y="${(y + 3).toFixed(2)}" fill="#8d9399" font-size="10" text-anchor="${textAnchor}">${formatter(value)}</text>
+        <text x="${textX}" y="${(y + 4).toFixed(2)}" fill="#a3aab0" font-size="12" text-anchor="${textAnchor}">${formatter(value)}</text>
       `;
     })
     .join('');
@@ -160,7 +157,7 @@ function buildAxisGuideLines(ticks, top, trackHeight, domain, left, right, { str
 }
 
 function buildAxisTitle(x, y, label, anchor = 'start') {
-  return `<text x="${x}" y="${y}" fill="#8f969c" font-size="9" letter-spacing="0.12em" text-anchor="${anchor}">${label}</text>`;
+  return `<text x="${x}" y="${y}" fill="#b4bac0" font-size="12" text-anchor="${anchor}">${label}</text>`;
 }
 
 function buildSeriesDomain(series, { includeZero = false, minimumSpan = 1, paddingRatio = 0.08 } = {}) {
@@ -273,7 +270,7 @@ function buildXAxisTicks(monthLabels, aIndex, bIndex, left, width, y) {
       const x = left + ratio * width;
       return `
         <line x1="${x.toFixed(2)}" y1="${y}" x2="${x.toFixed(2)}" y2="${y + 6}" stroke="#5b6066" stroke-width="1" />
-        <text x="${x.toFixed(2)}" y="${y + 18}" fill="#8d9399" font-size="10" text-anchor="middle">${year}</text>
+        <text x="${x.toFixed(2)}" y="${y + 20}" fill="#a3aab0" font-size="12" text-anchor="middle">${year}</text>
       `;
     })
     .join('');
@@ -378,6 +375,16 @@ function formatChartBucketLabel(bucket) {
   return bucket.start === bucket.end ? bucket.start : `${bucket.start} to ${bucket.end}`;
 }
 
+// Approximate width of an H3 hexagon (flat to flat) at each resolution.
+const H3_CELL_WIDTH_LABELS = ['~1,900 km', '~730 km', '~270 km', '~100 km'];
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function formatMonthLabel(label) {
+  const [year, month] = (label ?? '').split('-').map(Number);
+  return MONTH_NAMES[month - 1] ? `${MONTH_NAMES[month - 1]} ${year}` : label ?? '';
+}
+
 const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function buildRingMonthLabels(cx, cy, radius, startMonth = 1) {
@@ -390,32 +397,38 @@ function buildRingMonthLabels(cx, cy, radius, startMonth = 1) {
     const angle = startOffset + (index + 0.5) * segmentAngle;
     const x = cx + Math.cos(angle) * radius;
     const y = cy + Math.sin(angle) * radius;
-    return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" fill="#b0b6bc" font-size="10" text-anchor="middle" dominant-baseline="middle">${MONTH_ABBREVIATIONS[monthIndex]}</text>`;
+    return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" fill="#b4bac0" font-size="12" text-anchor="middle" dominant-baseline="middle">${MONTH_ABBREVIATIONS[monthIndex]}</text>`;
   }).join('');
 }
 
 function formatDetailHoverValue(variable, value) {
   if (variable === 'temperature') {
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)} ℃ anomaly`;
+    return `${formatNumber(value, 2, { signed: true })} °C anomaly`;
   }
-  return `${value >= 0 ? '+' : ''}${value.toFixed(1)} %`;
+  return `${formatNumber(value, 1, { signed: true })}% anomaly`;
 }
 
 function formatDetailHoverRawValue(variable, value) {
   if (variable === 'temperature') {
-    return `${value.toFixed(2)} ℃`;
+    return `${formatNumber(value, 2)} °C`;
   }
-  return `${value.toFixed(1)} mm/month`;
+  return `${formatNumber(value, 1)} mm/month`;
 }
 
 function formatDetailStatValue(variable, value) {
   if (!Number.isFinite(value)) {
-    return '—';
+    return '\u2014';
   }
   if (variable === 'temperature') {
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)} ℃`;
+    return `${formatNumber(value, 2, { signed: true })} °C`;
   }
-  return `${value >= 0 ? '+' : ''}${value.toFixed(1)} %`;
+  return `${formatNumber(value, 1, { signed: true })}%`;
+}
+
+function axisTitles(variable) {
+  return variable === 'temperature'
+    ? { raw: 'Temperature (°C)', anomaly: 'Anomaly (°C)' }
+    : { raw: 'Precipitation (mm/month)', anomaly: 'Anomaly (%)' };
 }
 
 function computeSeriesStats(series) {
@@ -498,8 +511,8 @@ const RONI_METADATA_SOURCE = {
 
 const REFERENCE_METADATA_SOURCES = [
   {
-    label: '',
-    text: 'Global Countries and Cities',
+    label: 'Places',
+    text: 'Country borders and populated places',
     url: 'https://www.naturalearthdata.com/downloads/50m-cultural-vectors/',
     linkLabel: 'Natural Earth'
   }
@@ -525,8 +538,8 @@ function buildMetadataSourceLine(source) {
   }
   const linkLabel = escapeHtml(linkLabelRaw || 'source');
   const link = url ? `<a href="${url}" target="_blank" rel="noreferrer">${linkLabel}</a>` : '';
-  const value = text && link ? `${text} - ${link}` : link || text;
-  return label ? `${label} - ${value}` : value;
+  const value = text && link ? `${text} (${link})` : link || text;
+  return label ? `${label}: ${value}` : value;
 }
 
 function buildMetadataSourcesMarkup(sources) {
@@ -654,8 +667,8 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     };
 
     chartMarkup = `
-      ${buildAxisTitle(leftPad, chartTop - 14, variableLabel.toUpperCase(), 'start')}
-      ${buildAxisTitle(width - rightPad, chartTop - 14, 'ANOMALY', 'end')}
+      ${buildAxisTitle(leftPad - 40, chartTop - 18, axisTitles(variable).raw, 'start')}
+      ${buildAxisTitle(width - rightPad + 40, chartTop - 18, axisTitles(variable).anomaly, 'end')}
       ${useAlignedDualAxisOnly ? '' : buildAxisGuideLines(rawGuideTicks, chartTop, chartHeight, rawDomain, leftPad, width - rightPad, { stroke: 'rgba(128, 134, 140, 0.14)', dashArray: '4 5' })}
       ${buildAxisGuideLines(anomalyGuideTicks, chartTop, chartHeight, anomalyDomain, leftPad, width - rightPad, { stroke: 'rgba(165, 171, 177, 0.16)' })}
       <line x1="${leftPad}" y1="${zeroLineY(anomalyDomain, chartTop, chartHeight).toFixed(2)}" x2="${width - rightPad}" y2="${zeroLineY(anomalyDomain, chartTop, chartHeight).toFixed(2)}" stroke="#565c62" stroke-width="1.1" />
@@ -697,8 +710,8 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     };
 
     chartMarkup = `
-      ${buildAxisTitle(leftPad, chartTop - 14, variableLabel.toUpperCase(), 'start')}
-      ${buildAxisTitle(width - rightPad, chartTop - 14, 'ANOMALY', 'end')}
+      ${buildAxisTitle(leftPad - 40, chartTop - 18, axisTitles(variable).raw, 'start')}
+      ${buildAxisTitle(width - rightPad + 40, chartTop - 18, axisTitles(variable).anomaly, 'end')}
       ${useAlignedDualAxisOnly ? '' : buildAxisGuideLines(rawGuideTicks, chartTop, chartHeight, rawDomain, leftPad, width - rightPad, { stroke: 'rgba(128, 134, 140, 0.14)', dashArray: '4 5' })}
       ${buildAxisGuideLines(anomalyGuideTicks, chartTop, chartHeight, anomalyDomain, leftPad, width - rightPad, { stroke: 'rgba(165, 171, 177, 0.16)' })}
       <line x1="${leftPad}" y1="${zeroY.toFixed(2)}" x2="${width - rightPad}" y2="${zeroY.toFixed(2)}" stroke="#565c62" stroke-width="1.1" />
@@ -710,7 +723,6 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
       ${buildXAxisTicks(metadata.monthLabels, aIndex, bIndex, leftPad, innerWidth, chartBottom)}
     `;
   } else {
-    const firstBucketStartMonth = monthNumberFromLabel(rangeBuckets[0]?.start) ?? 1;
     hoverModel = {
       width,
       height,
@@ -719,14 +731,14 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     };
 
     chartMarkup = `
-      <text x="16" y="22" fill="#9fa6ad" font-size="10" letter-spacing="0.08em" text-anchor="start">${escapeHtml(variableLabel.toUpperCase())}</text>
+      <text x="16" y="24" fill="#b4bac0" font-size="12" text-anchor="start">${escapeHtml(`${variableLabel} anomaly by month (${variable === 'temperature' ? '°C' : '%'})`)}</text>
       <g transform="translate(0, 6)">
         ${buildBucketRingSlices(bucketedSeries, anomalyDomain, ringCx, ringCy, ringOuterRadius, ringInnerRadius, palette, 12, colorDomain)}
       </g>
-      ${buildRingMonthLabels(ringCx, ringCy + 6, ringOuterRadius + 18, firstBucketStartMonth)}
+      ${buildRingMonthLabels(ringCx, ringCy + 6, ringOuterRadius + 18, 1)}
       <circle cx="${ringCx}" cy="${ringCy + 6}" r="${ringInnerRadius - 2}" fill="#121213" />
-      <text x="${ringCx}" y="${(ringCy + 10).toFixed(2)}" fill="#e4e8ea" font-size="12" text-anchor="middle">${escapeHtml(startYear)}</text>
-      <text x="${(width - 20).toFixed(2)}" y="${(ringCy + 10).toFixed(2)}" fill="#cfd3d6" font-size="12" text-anchor="end">${escapeHtml(endYear)}</text>
+      <text x="${ringCx}" y="${(ringCy + 10).toFixed(2)}" fill="#e4e8ea" font-size="13" text-anchor="middle">${escapeHtml(startYear)}</text>
+      <text x="${(width - 20).toFixed(2)}" y="${(ringCy + 10).toFixed(2)}" fill="#cfd3d6" font-size="13" text-anchor="end">${escapeHtml(endYear)}</text>
     `;
   }
 
@@ -735,7 +747,7 @@ function buildDetailChart(metadata, cell, state, valueDomains, committedChartDom
     colorDomain,
     markup: `
       <div class="detail-chart__frame" data-detail-chart-frame>
-        <svg class="detail-chart__svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Expanded ${modeLabel} chart">
+        <svg class="detail-chart__svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(`${modeLabel} chart of ${variableLabel.toLowerCase()} anomalies from ${startYear} to ${endYear} for ${cell.isGlobal ? 'the global average' : formatLatLon(cell.lat, cell.lon)}`)}">
           <rect x="0" y="0" width="${width}" height="${height}" rx="12" fill="#121213" />
           <defs>
             <linearGradient id="detail-gradient-${cell.id.replace(/[^a-zA-Z0-9_-]/g, '_')}" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -765,13 +777,13 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   const metaDatasource = root.querySelector('[data-bind="meta-datasource"]');
   const metaCopyright = root.querySelector('[data-bind="meta-copyright"]');
   const detailSummary = root.querySelector('[data-detail-summary]');
+  const selectionAnnouncer = root.querySelector('[data-selection-announcer]');
   const detailChart = root.querySelector('[data-detail-chart]');
   const timelineSelection = root.querySelector('[data-timeline-selection]');
   const timelineRuler = root.querySelector('[data-timeline-ruler]');
   const timelineRoni = root.querySelector('[data-timeline-oni]');
   const timelineRoniToggle = root.querySelector('[data-timeline-oni-toggle]');
   const periodSelect = root.querySelector('[data-period-select]');
-  const tooltip = root.querySelector('[data-tooltip]');
   const exportMapButton = root.querySelector('[data-action="export-map"]');
   const exportChartButton = root.querySelector('[data-action="export-chart"]');
   const controlPanel = root.querySelector('[data-panel="controls"]');
@@ -908,6 +920,10 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   function setRangeIndexes(aIndex, bIndex) {
     const nextA = Math.max(0, Math.min(aIndex, monthLabels.length - 2));
     const nextB = Math.min(monthLabels.length - 1, Math.max(bIndex, nextA + 1));
+    const { rangeA, rangeB } = store.getState();
+    if (rangeA.start === monthLabels[nextA] && rangeB.start === monthLabels[nextB]) {
+      return;
+    }
     store.setRanges(
       { start: monthLabels[nextA], end: monthLabels[nextA] },
       { start: monthLabels[nextB], end: monthLabels[nextB] }
@@ -1059,7 +1075,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clonedSvg.setAttribute('width', String(width));
     clonedSvg.setAttribute('height', String(height));
-    clonedSvg.setAttribute('font-family', "'IBM Plex Sans', 'Segoe UI', Arial, sans-serif");
+    clonedSvg.setAttribute('font-family', "'IBM Plex Sans', system-ui, 'Segoe UI', Roboto, sans-serif");
     const markup = new XMLSerializer().serializeToString(clonedSvg);
     const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml;charset=utf-8' }));
     return new Promise((resolve, reject) => {
@@ -1166,39 +1182,6 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   exportChartButton?.addEventListener('click', () => {
     void exportChartPng();
   });
-
-  let tooltipCellId = null;
-
-  function renderTooltip(state, forceContentRebuild = false) {
-    if (!state.hoveredCell || !state.hoveredPosition) {
-      tooltip.hidden = true;
-      tooltipCellId = null;
-      return;
-    }
-
-    const hoveredCell = lookupCell(state.hoveredCell);
-    if (!hoveredCell || hoveredCell.isGlobal) {
-      tooltip.hidden = true;
-      tooltipCellId = null;
-      return;
-    }
-
-    tooltip.hidden = false;
-    tooltip.style.transform = `translate(${state.hoveredPosition.x + 12}px, ${state.hoveredPosition.y + 12}px)`;
-
-    if (!forceContentRebuild && tooltipCellId === state.hoveredCell) {
-      return;
-    }
-    tooltipCellId = state.hoveredCell;
-
-    const summary = buildCellSummary(hoveredCell, metadata, state);
-    const variableLabel = getVariableLabel(state.variable ?? 'temperature');
-    tooltip.innerHTML = `
-      <strong>${formatLatLon(summary.lat, summary.lon)}</strong>
-      <span>${variableLabel} A: ${summarizeValue(state.variable ?? 'temperature', summary.variable === 'temperature' ? summary.tempA : summary.precipA, false)}</span>
-      <span>${variableLabel} B: ${summarizeValue(state.variable ?? 'temperature', summary.variable === 'temperature' ? summary.tempB : summary.precipB, false)}</span>
-    `;
-  }
 
   function hideDetailChartHover() {
     if (!detailChart) {
@@ -1493,9 +1476,9 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
         const h3Res = state.displayedH3Resolution;
         const gridDeg = state.displayedGridDegrees;
         if (state.unit === 'grid' && gridDeg != null) {
-          symbolUnitInfo.textContent = `Grid ${gridDeg}°`;
+          symbolUnitInfo.textContent = `${gridDeg}°`;
         } else if (h3Res != null) {
-          symbolUnitInfo.textContent = `H3 res ${h3Res}`;
+          symbolUnitInfo.textContent = H3_CELL_WIDTH_LABELS[h3Res] ?? '';
         } else {
           symbolUnitInfo.textContent = '';
         }
@@ -1507,8 +1490,8 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       }
       periodSelect.value = String(state.periodMonths ?? 1);
 
-      const minYear = 1940;
-      const maxYear = 2025;
+      const minYear = Number(monthLabels[0].slice(0, 4));
+      const maxYear = Number(monthLabels[monthLabels.length - 1].slice(0, 4));
       const startYear = Number(state.rangeA.start?.split('-')[0]);
       const endYear = Number(state.rangeB.start?.split('-')[0]);
 
@@ -1582,6 +1565,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       for (const input of rangeSliders) {
         input.value = inputState[input.dataset.range];
         const isStart = input.dataset.range === 'a-point';
+        input.setAttribute('aria-valuetext', formatMonthLabel(isStart ? state.rangeA.start : state.rangeB.start));
         const shouldRaise = isStart
           ? inputState['a-point'] >= inputState['b-point'] - 24
           : inputState['b-point'] <= inputState['a-point'] + 24;
@@ -1606,7 +1590,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
         const detailSeries = getAggregatedSeries(previewCell, metadata, state, summary.variable);
         const detailStats = computeSeriesStats(detailSeries);
         const anchor = previewCell === selectedCell ? state.selectedAnchor : null;
-        const locationLabel = previewCell.isGlobal ? 'Location' : 'Coordinates';
+        const locationLabel = 'Location';
         const locationValue = previewCell.isGlobal
           ? escapeHtml(previewCell.label ?? 'Global average')
           : anchor
@@ -1624,15 +1608,21 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
                 <strong>${formatDetailStatValue(summary.variable, detailStats.mean)}</strong>
               </div>
               <div>
-                <span>Highest Value</span>
+                <span>Highest</span>
                 <strong>${formatDetailStatValue(summary.variable, detailStats.max)}</strong>
               </div>
               <div>
-                <span>Lowest Value</span>
+                <span>Lowest</span>
                 <strong>${formatDetailStatValue(summary.variable, detailStats.min)}</strong>
               </div>
             </div>
           `;
+        }
+
+        if (selectionAnnouncer && changedKey === 'selectedCell') {
+          selectionAnnouncer.textContent = previewCell === selectedCell
+            ? `Selected ${previewCell.isGlobal ? 'global average' : locationValue}. Average ${formatDetailStatValue(summary.variable, detailStats.mean)}.`
+            : 'Selection cleared. Showing the global average.';
         }
 
         if (detailChart) {
@@ -1671,8 +1661,6 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
         currentDetailChartModel = null;
         hideDetailChartHover();
       }
-
-      renderTooltip(state);
 
       if (exportChartButton) {
         exportChartButton.disabled = !(detailChart?.querySelector('.detail-chart__svg'));

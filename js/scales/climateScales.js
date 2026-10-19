@@ -55,6 +55,21 @@ export function interpolateHex(a, b, t) {
   return `#${mix(ar, br)}${mix(ag, bg)}${mix(ab, bb)}`;
 }
 
+const MINUS = '\u2212';
+
+// Formats a number with a typographic minus sign (and a plus sign when `signed`).
+export function formatNumber(value, digits = 1, { signed = false } = {}) {
+  if (!Number.isFinite(value)) {
+    return '\u2014';
+  }
+  const rounded = Number(value.toFixed(digits));
+  const text = Math.abs(rounded).toFixed(digits);
+  if (rounded < 0) {
+    return `${MINUS}${text}`;
+  }
+  return signed && rounded > 0 ? `+${text}` : text;
+}
+
 export function getVariableLabel(variable) {
   return VARIABLE_LABELS[variable] ?? variable;
 }
@@ -96,16 +111,9 @@ export function rampColor(value, domain, palette) {
 
 export function summarizeValue(mode, value, trendMode) {
   if (mode === 'temperature') {
-    if (trendMode) {
-      return `${value >= 0 ? '+' : ''}${value.toFixed(2)} ℃ / decade`;
-    }
-    return `${value >= 0 ? '+' : ''}${value.toFixed(1)} ℃ anomaly`;
+    return trendMode ? `${formatNumber(value, 2, { signed: true })} °C per decade` : `${formatNumber(value, 1, { signed: true })} °C anomaly`;
   }
-  return `${value >= 0 ? '+' : ''}${value.toFixed(1)} ${trendMode ? '% / decade' : '%'}`;
-}
-
-function formatDomainValue(value, precision, includePlus = true) {
-  return `${includePlus && value >= 0 ? '+' : ''}${value.toFixed(precision)}`;
+  return `${formatNumber(value, 1, { signed: true })}${trendMode ? '% per decade' : '%'}`;
 }
 
 export function buildLegendMarkup(
@@ -117,10 +125,9 @@ export function buildLegendMarkup(
 ) {
   const palette = paletteForVariable(variable);
   const domain = domainForVariable(variable, trendMode, domainOverrides);
-  const includePlus = true;
-  const left = formatDomainValue(domain[0], 1, includePlus);
-  const right = formatDomainValue(domain[1], 1, includePlus);
-  const unit = variable === 'temperature' ? (trendMode ? '℃ / decade' : '℃') : trendMode ? '% / decade' : '%';
+  const left = formatNumber(domain[0], 1, { signed: true });
+  const right = formatNumber(domain[1], 1, { signed: true });
+  const unit = variable === 'temperature' ? (trendMode ? ' °C per decade' : ' °C') : trendMode ? '% per decade' : '%';
 
   return `
     <div class="legend legend--single">
@@ -128,16 +135,16 @@ export function buildLegendMarkup(
         <span class="legend__bar-fill" style="background:linear-gradient(90deg, ${palette.join(',')})"></span>
       </div>
       <div class="legend__axis">
-        <span>${left} ${unit}</span>
-        <span>${right} ${unit}</span>
+        <span>${left}${unit}</span>
+        <span>${right}${unit}</span>
       </div>
       ${showValueScaleToggle ? `
         <div class="legend__controls">
           <fieldset class="legend__radio-group" data-scale-group="value">
             <legend class="legend__radio-group-label">Value scale</legend>
             <div class="legend__radio-options">
-              <label class="legend__radio"><input type="radio" name="legend-value-scale" value="local" ${chartValueScaleMode === 'local' ? 'checked' : ''} /><span>Individual</span></label>
-              <label class="legend__radio"><input type="radio" name="legend-value-scale" value="viewport" ${chartValueScaleMode === 'viewport' ? 'checked' : ''} /><span>Extent</span></label>
+              <label class="legend__radio"><input type="radio" name="legend-value-scale" value="local" ${chartValueScaleMode === 'local' ? 'checked' : ''} /><span>Per cell</span></label>
+              <label class="legend__radio"><input type="radio" name="legend-value-scale" value="viewport" ${chartValueScaleMode === 'viewport' ? 'checked' : ''} /><span>In view</span></label>
               <label class="legend__radio"><input type="radio" name="legend-value-scale" value="global" ${chartValueScaleMode === 'global' ? 'checked' : ''} /><span>Global</span></label>
             </div>
           </fieldset>
