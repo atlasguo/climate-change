@@ -432,13 +432,6 @@ function formatChartBucketLabel(bucket) {
 // Approximate width of an H3 hexagon (flat to flat) at each resolution.
 const H3_CELL_WIDTH_LABELS = ['~1,900 km', '~730 km', '~270 km', '~100 km'];
 
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-function formatMonthLabel(label) {
-  const [year, month] = (label ?? '').split('-').map(Number);
-  return MONTH_NAMES[month - 1] ? `${MONTH_NAMES[month - 1]} ${year}` : label ?? '';
-}
-
 const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function buildRingMonthLabels(cx, cy, radius, startMonth = 1) {
@@ -833,7 +826,8 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   const detailSummary = root.querySelector('[data-detail-summary]');
   const selectionAnnouncer = root.querySelector('[data-selection-announcer]');
   const detailChart = root.querySelector('[data-detail-chart]');
-  const timelineSelection = root.querySelector('[data-timeline-selection]');
+  const timelineMaskBefore = root.querySelector('[data-timeline-mask="before"]');
+  const timelineMaskAfter = root.querySelector('[data-timeline-mask="after"]');
   const timelineRuler = root.querySelector('[data-timeline-ruler]');
   const timelineRoni = root.querySelector('[data-timeline-oni]');
   const timelineRoniToggle = root.querySelector('[data-timeline-oni-toggle]');
@@ -856,13 +850,9 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   const showCountryLabelToggle = root.querySelector('[data-show-country-label]');
   const showCityLabelToggle = root.querySelector('[data-show-city-label]');
   const symbolUnitInfo = root.querySelector('[data-bind="symbol-unit-info"]');
-  const rangeSliders = [...root.querySelectorAll('[data-range]')];
-  const rangeStepButtons = [...root.querySelectorAll('[data-range-step]')];
+  const startYearSelect = root.querySelector('[data-range-select="start"]');
+  const endYearSelect = root.querySelector('[data-range-select="end"]');
   const mobileToggleButtons = [...root.querySelectorAll('[data-mobile-toggle]')];
-  const rangeInputs = {
-    a: { year: root.querySelector('[data-range-input="a-year"]') },
-    b: { year: root.querySelector('[data-range-input="b-year"]') }
-  };
   let currentDetailChartModel = null;
   const lookupCell = (id) => (id == null ? null : getDisplayCell(id) ?? null);
   const defaultDetailCell = () => lookupCell('global') ?? globalCell;
@@ -913,6 +903,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     const [year, month] = label.split('-').map(Number);
     if (month === 1) {
       tickItems.push({
+        year,
         label: year % 5 === 0 ? String(year) : '',
         annual: true,
         major: year % 10 === 0,
@@ -925,7 +916,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   timelineRuler.innerHTML = tickItems
     .map(
       (tick) =>
-        `<span class="timeline-axis__tick${tick.annual ? ' is-annual' : ''}${tick.medium ? ' is-medium' : ''}${tick.major ? ' is-major' : ''}" style="left:${(tick.ratio * 100).toFixed(3)}%"><i></i>${tick.label ? `<em>${tick.label}</em>` : ''}</span>`
+        `<span class="timeline-axis__tick${tick.annual ? ' is-annual' : ''}${tick.medium ? ' is-medium' : ''}${tick.major ? ' is-major' : ''}" data-year="${tick.year}" style="left:${(tick.ratio * 100).toFixed(3)}%"><i></i>${tick.label ? `<em>${tick.label}</em>` : ''}</span>`
     )
     .join('');
 
@@ -937,116 +928,37 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     store.setPeriodMonths(Number(periodSelect.value));
   });
 
-  for (const input of rangeSliders) {
-    input.min = 0;
-    input.max = monthLabels.length;
-    input.step = 12;
-    input.addEventListener('pointerdown', () => {
-      for (const slider of rangeSliders) {
-        slider.classList.toggle('is-active', slider === input);
-      }
-    });
-    input.addEventListener('input', () => {
-      const currentState = store.getState();
-      let aValue = getMonthIndex(metadata, currentState.rangeA.start);
-      let bValue = getMonthIndex(metadata, currentState.rangeB.start) + 1;
+  const firstYear = Number(monthLabels[0].slice(0, 4));
+  const lastYear = Number(monthLabels[monthLabels.length - 1].slice(0, 4));
+  const yearOptions = Array.from({ length: lastYear - firstYear + 1 }, (_, offset) => firstYear + offset);
+  const yearOptionsMarkup = yearOptions.map((year) => `<option value="${year}">${year}</option>`).join('');
+  startYearSelect.innerHTML = yearOptionsMarkup;
+  endYearSelect.innerHTML = yearOptionsMarkup;
 
-      if (input.dataset.range === 'a-point') {
-        aValue = Number(input.value);
-      }
-      if (input.dataset.range === 'b-point') {
-        bValue = Number(input.value);
-      }
-
-      let aIndex = aValue;
-      let bIndex = bValue - 1;
-
-      aIndex = Math.min(aIndex, bIndex - 1);
-      bIndex = Math.max(bIndex, aIndex + 1);
-
-      store.setRanges(
-        { start: monthLabels[aIndex], end: monthLabels[aIndex] },
-        { start: monthLabels[bIndex], end: monthLabels[bIndex] }
-      );
-    });
-  }
-
-  function setRangeIndexes(aIndex, bIndex) {
-    const nextA = Math.max(0, Math.min(aIndex, monthLabels.length - 2));
-    const nextB = Math.min(monthLabels.length - 1, Math.max(bIndex, nextA + 1));
+  // The time range always spans whole years: January of the start year to December of the end year.
+  function setYearRange(startYear, endYear) {
+    const start = getMonthIndex(metadata, `${startYear}-01`);
+    const endLabel = `${endYear}-12`;
+    const end = getMonthIndex(metadata, endLabel) === -1 ? monthLabels.length - 1 : getMonthIndex(metadata, endLabel);
+    if (start === -1 || end < start) {
+      return;
+    }
     const { rangeA, rangeB } = store.getState();
-    if (rangeA.start === monthLabels[nextA] && rangeB.start === monthLabels[nextB]) {
+    if (rangeA.start === monthLabels[start] && rangeB.start === monthLabels[end]) {
       return;
     }
     store.setRanges(
-      { start: monthLabels[nextA], end: monthLabels[nextA] },
-      { start: monthLabels[nextB], end: monthLabels[nextB] }
+      { start: monthLabels[start], end: monthLabels[start] },
+      { start: monthLabels[end], end: monthLabels[end] }
     );
   }
 
-  for (const [key, fields] of Object.entries(rangeInputs)) {
-    const commit = () => {
-      const currentState = store.getState();
-      const currentLabel = key === 'a' ? currentState.rangeA.start : currentState.rangeB.start;
-      const currentMonth = currentLabel.split('-')[1] ?? '01';
-      const yearNum = Number(fields.year.value?.trim());
-      if (!Number.isInteger(yearNum)) {
-        fields.year.value = currentLabel.split('-')[0];
-        return;
-      }
-      const candidate = `${yearNum}-${currentMonth}`;
-      const parsedIndex = getMonthIndex(metadata, candidate);
-      if (parsedIndex === -1) {
-        fields.year.value = currentLabel.split('-')[0];
-        return;
-      }
-      const aIndex = getMonthIndex(metadata, currentState.rangeA.start);
-      const bIndex = getMonthIndex(metadata, currentState.rangeB.start);
-      setRangeIndexes(key === 'a' ? parsedIndex : aIndex, key === 'b' ? parsedIndex : bIndex);
-    };
-
-    const commitOnInput = () => {
-      const currentState = store.getState();
-      const currentLabel = key === 'a' ? currentState.rangeA.start : currentState.rangeB.start;
-      const currentMonth = currentLabel.split('-')[1] ?? '01';
-      const yearNum = Number(fields.year.value?.trim());
-      if (!Number.isInteger(yearNum)) {
-        return;
-      }
-      const candidate = `${yearNum}-${currentMonth}`;
-      const parsedIndex = getMonthIndex(metadata, candidate);
-      if (parsedIndex === -1) {
-        return;
-      }
-      const aIndex = getMonthIndex(metadata, currentState.rangeA.start);
-      const bIndex = getMonthIndex(metadata, currentState.rangeB.start);
-      setRangeIndexes(key === 'a' ? parsedIndex : aIndex, key === 'b' ? parsedIndex : bIndex);
-    };
-
-    fields.year.addEventListener('input', commitOnInput);
-
-    fields.year.addEventListener('blur', commit);
-    fields.year.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        commit();
-        fields.year.blur();
-      }
-    });
-  }
-
-  for (const button of rangeStepButtons) {
-    button.addEventListener('click', () => {
-      const [target, rawDelta] = button.dataset.rangeStep.split(':');
-      const delta = Number(rawDelta);
-      const [rangeKey, unit] = target.split('-');
-      const currentState = store.getState();
-      const aIndex = getMonthIndex(metadata, currentState.rangeA.start);
-      const bIndex = getMonthIndex(metadata, currentState.rangeB.start);
-      const step = unit === 'year' ? delta * 12 : delta;
-      setRangeIndexes(rangeKey === 'a' ? aIndex + step : aIndex, rangeKey === 'b' ? bIndex + step : bIndex);
-    });
-  }
+  startYearSelect.addEventListener('change', () => {
+    setYearRange(Number(startYearSelect.value), Number(endYearSelect.value));
+  });
+  endYearSelect.addEventListener('change', () => {
+    setYearRange(Number(startYearSelect.value), Number(endYearSelect.value));
+  });
 
   root.querySelector('[data-action="reset-ranges"]').addEventListener('click', () => store.resetRanges());
   symbolSizeSlider?.addEventListener('input', () => {
@@ -1544,26 +1456,16 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       }
       periodSelect.value = String(state.periodMonths ?? 1);
 
-      const minYear = Number(monthLabels[0].slice(0, 4));
-      const maxYear = Number(monthLabels[monthLabels.length - 1].slice(0, 4));
       const startYear = Number(state.rangeA.start?.split('-')[0]);
       const endYear = Number(state.rangeB.start?.split('-')[0]);
 
-      for (const button of rangeStepButtons) {
-        const [target, rawDelta] = button.dataset.rangeStep.split(':');
-        const delta = Number(rawDelta);
-        const [rangeKey, unit] = target.split('-');
-        const isYearStep = unit === 'year';
-
-        let disabled = false;
-        if (isYearStep && rangeKey === 'a') {
-          disabled = delta < 0 ? startYear <= minYear : startYear + 1 >= endYear;
-        } else if (isYearStep && rangeKey === 'b') {
-          disabled = delta < 0 ? endYear - 1 <= startYear : endYear >= maxYear;
-        }
-
-        button.disabled = disabled;
-        button.classList.toggle('is-disabled', disabled);
+      startYearSelect.value = String(startYear);
+      endYearSelect.value = String(endYear);
+      for (const option of startYearSelect.options) {
+        option.disabled = Number(option.value) > endYear;
+      }
+      for (const option of endYearSelect.options) {
+        option.disabled = Number(option.value) < startYear;
       }
 
       if (symbolSizeSlider) {
@@ -1602,32 +1504,17 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
         showCityLabelToggle.checked = Boolean(state.showCityLabel);
       }
 
-      rangeInputs.a.year.value = state.rangeA.start.split('-')[0];
-      rangeInputs.b.year.value = state.rangeB.start.split('-')[0];
-
-      const inputState = {
-        'a-point': getMonthIndex(metadata, state.rangeA.start),
-        'b-point': getMonthIndex(metadata, state.rangeB.start) + 1
-      };
-      const aRatio = inputState['a-point'] / Math.max(1, monthLabels.length);
-      const bRatio = inputState['b-point'] / Math.max(1, monthLabels.length);
-      timelineSelection.style.left = `${(aRatio * 100).toFixed(3)}%`;
-      timelineSelection.style.width = `${Math.max(0, (bRatio - aRatio) * 100).toFixed(3)}%`;
-      timelineRoni.hidden = !timelineRoniToggle.checked;
-      const midpoint = ((aRatio + bRatio) / 2) * 100;
-
-      for (const input of rangeSliders) {
-        input.value = inputState[input.dataset.range];
-        const isStart = input.dataset.range === 'a-point';
-        input.setAttribute('aria-valuetext', formatMonthLabel(isStart ? state.rangeA.start : state.rangeB.start));
-        const shouldRaise = isStart
-          ? inputState['a-point'] >= inputState['b-point'] - 24
-          : inputState['b-point'] <= inputState['a-point'] + 24;
-        input.classList.toggle('is-priority', shouldRaise);
-        input.style.clipPath = isStart
-          ? `inset(0 ${Math.max(0, 100 - midpoint).toFixed(3)}% 0 0)`
-          : `inset(0 0 0 ${Math.max(0, midpoint).toFixed(3)}%)`;
+      const startRatio = getMonthIndex(metadata, state.rangeA.start) / monthLabels.length;
+      const endRatio = (getMonthIndex(metadata, state.rangeB.start) + 1) / monthLabels.length;
+      timelineMaskBefore.style.width = `${(startRatio * 100).toFixed(3)}%`;
+      timelineMaskAfter.style.left = `${(endRatio * 100).toFixed(3)}%`;
+      timelineMaskBefore.hidden = startRatio <= 0;
+      timelineMaskAfter.hidden = endRatio >= 1;
+      for (const tick of timelineRuler.children) {
+        const tickYear = Number(tick.dataset.year);
+        tick.classList.toggle('is-outside', tickYear < startYear || tickYear > endYear);
       }
+      timelineRoni.hidden = !timelineRoniToggle.checked;
 
       const hoveredCell = lookupCell(state.hoveredCell);
       const selectedCell = lookupCell(state.selectedCell);

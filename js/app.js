@@ -251,22 +251,14 @@ const SHELL = `
         <h2 class="panel-label" id="timeline-heading">Timeline</h2>
         <div class="timeline-dock__actions">
           <div class="timeline-editor">
-            <div class="timeline-editor__group" role="group" aria-labelledby="start-year-label">
-              <span id="start-year-label">Start year</span>
-              <div class="timeline-editor__controls">
-                <button type="button" class="timeline-editor__step" data-range-step="a-year:-1" aria-label="Decrease start year">&minus;</button>
-                <input type="text" class="timeline-editor__input timeline-editor__input--year" data-range-input="a-year" inputmode="numeric" spellcheck="false" aria-label="Start year" />
-                <button type="button" class="timeline-editor__step" data-range-step="a-year:1" aria-label="Increase start year">+</button>
-              </div>
-            </div>
-            <div class="timeline-editor__group" role="group" aria-labelledby="end-year-label">
-              <span id="end-year-label">End year</span>
-              <div class="timeline-editor__controls">
-                <button type="button" class="timeline-editor__step" data-range-step="b-year:-1" aria-label="Decrease end year">&minus;</button>
-                <input type="text" class="timeline-editor__input timeline-editor__input--year" data-range-input="b-year" inputmode="numeric" spellcheck="false" aria-label="End year" />
-                <button type="button" class="timeline-editor__step" data-range-step="b-year:1" aria-label="Increase end year">+</button>
-              </div>
-            </div>
+            <label class="timeline-editor__group">
+              <span>Start year</span>
+              <select class="timeline-period__select timeline-editor__select" data-range-select="start"></select>
+            </label>
+            <label class="timeline-editor__group">
+              <span>End year</span>
+              <select class="timeline-period__select timeline-editor__select" data-range-select="end"></select>
+            </label>
           </div>
           <label class="timeline-period">
             <span>Period</span>
@@ -292,13 +284,12 @@ const SHELL = `
 
       <div class="timeline-grid timeline-grid--single">
         <section class="timeline-block">
-          <div class="timeline-axis" data-timeline-axis>
+          <div class="timeline-axis" data-timeline-axis aria-hidden="true">
             <div class="timeline-axis__line"></div>
-            <div class="timeline-axis__selection" data-timeline-selection></div>
             <div class="timeline-axis__oni" data-timeline-oni></div>
             <div class="timeline-axis__ticks" data-timeline-ruler></div>
-            <input type="range" data-range="a-point" class="timeline-axis__slider timeline-axis__slider--a" aria-label="Start of time range" />
-            <input type="range" data-range="b-point" class="timeline-axis__slider timeline-axis__slider--b" aria-label="End of time range" />
+            <div class="timeline-axis__mask timeline-axis__mask--before" data-timeline-mask="before" aria-hidden="true"></div>
+            <div class="timeline-axis__mask timeline-axis__mask--after" data-timeline-mask="after" aria-hidden="true"></div>
           </div>
         </section>
       </div>
