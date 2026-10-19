@@ -83,6 +83,7 @@ function buildGlyphMarkup(record, metadata, state, glyphWidth, glyphHeight, valu
     `;
     parts.push(`
       <line x1="${padX}" y1="${zeroY.toFixed(2)}" x2="${(glyphWidth - padX).toFixed(2)}" y2="${zeroY.toFixed(2)}" stroke="${themeColor('glyphZero')}" stroke-width="0.3" />
+      <path d="${path}" fill="none" stroke="${themeColor('glyphHalo')}" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round" />
       <path d="${path}" fill="none" stroke="url(#${gradientId})" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
     `);
   } else if (mode === 'shade') {
@@ -95,10 +96,12 @@ function buildGlyphMarkup(record, metadata, state, glyphWidth, glyphHeight, valu
         <rect x="0" y="${(shadeZeroY + shadeGapHalf).toFixed(2)}" width="${glyphWidth}" height="${Math.max(0, glyphHeight - shadeZeroY - shadeGapHalf).toFixed(2)}" />
       </clipPath>
     `;
+    const bars = buildBarRectsSvg(visibleSeries, geometryDomain, padX, chartTop, innerWidth, trackHeight, palette, colorDomain);
+    // The halo is the same bars drawn wider in the theme's halo colour, underneath.
+    const halo = bars.replace(/fill="[^"]*"/g, `fill="${themeColor('glyphHalo')}" stroke="${themeColor('glyphHalo')}" stroke-width="1.4" opacity="0.7"`);
     parts.push(`
-      <g clip-path="url(#${shadeClipId})">
-        ${buildBarRectsSvg(visibleSeries, geometryDomain, padX, chartTop, innerWidth, trackHeight, palette, colorDomain)}
-      </g>
+      <g>${halo}</g>
+      <g clip-path="url(#${shadeClipId})">${bars}</g>
     `);
   } else {
     const bucketedSeries = getBucketedSeries(record, metadata, state, variable);
@@ -107,6 +110,7 @@ function buildGlyphMarkup(record, metadata, state, glyphWidth, glyphHeight, valu
     const centerX = glyphWidth / 2;
     const centerY = glyphHeight / 2 + 1;
     parts.push(`
+      <circle cx="${centerX}" cy="${centerY}" r="${(ringRadius + 1.8).toFixed(2)}" fill="${themeColor('glyphHalo')}" />
       ${buildBucketRingSlices(bucketedSeries, geometryDomain, centerX, centerY, ringRadius, ringInnerRadius, palette, 12, colorDomain)}
       <circle cx="${centerX}" cy="${centerY}" r="${Math.max(4, ringInnerRadius - 2).toFixed(2)}" fill="${themeColor('glyphHole')}" />
     `);
