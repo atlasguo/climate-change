@@ -280,6 +280,41 @@ function buildXAxisBaseline(left, right, y) {
   return `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="#43484d" stroke-width="1" />`;
 }
 
+const ENSO_THRESHOLD = 0.5;
+const ENSO_MIN_SEASONS = 5;
+const ENSO_STRONG_PEAK = 1.5;
+
+// ENSO episodes follow the NOAA convention: at least five consecutive overlapping seasons
+// beyond +/-0.5. Only strong episodes (peak magnitude >= 1.5) are labelled.
+function findStrongEnsoEpisodes(roniPoints) {
+  const episodes = [];
+  let run = [];
+  let runSign = 0;
+  const closeRun = () => {
+    if (run.length >= ENSO_MIN_SEASONS) {
+      const peak = run.reduce((best, point) => (Math.abs(point.anomaly) > Math.abs(best.anomaly) ? point : best));
+      if (Math.abs(peak.anomaly) >= ENSO_STRONG_PEAK) {
+        episodes.push({ phase: runSign > 0 ? 'el-nino' : 'la-nina', peak });
+      }
+    }
+    run = [];
+    runSign = 0;
+  };
+
+  for (const point of roniPoints) {
+    const sign = point.anomaly >= ENSO_THRESHOLD ? 1 : point.anomaly <= -ENSO_THRESHOLD ? -1 : 0;
+    if (sign !== runSign) {
+      closeRun();
+    }
+    if (sign !== 0) {
+      runSign = sign;
+      run.push(point);
+    }
+  }
+  closeRun();
+  return episodes;
+}
+
 function buildTimelineRoniMarkup(monthLabels, roniPoints) {
   const width = 1000;
   const height = 76;
@@ -321,8 +356,27 @@ function buildTimelineRoniMarkup(monthLabels, roniPoints) {
   const positiveColor = roni[4];
   const negativeColor = roni[0];
 
+  const monthIndexForLabel = (label) => monthIndexes.get(label);
+  const eventLabels = findStrongEnsoEpisodes(roniPoints)
+    .map(({ phase, peak }) => {
+      const index = monthIndexForLabel(peak.monthLabel);
+      if (index === undefined) {
+        return '';
+      }
+      const percent = (index / Math.max(1, monthLabels.length - 1)) * 100;
+      const clamped = Math.max(domain[0], Math.min(domain[1], peak.anomaly));
+      const peakY = baselineY - (clamped / domain[1]) * amplitude;
+      // La Niña labels sit below the axis tick marks.
+      const y = phase === 'la-nina' ? Math.max(peakY, baselineY + 14) : peakY;
+      const edge = percent < 1.5 ? ' is-start' : percent > 98.5 ? ' is-end' : '';
+      const phaseName = phase === 'el-nino' ? 'El Niño' : 'La Niña';
+      return `<span class="timeline-event timeline-event--${phase}${edge}" style="left:${percent.toFixed(3)}%;top:${y.toFixed(1)}px" title="${phaseName} peak ${escapeHtml(peak.monthLabel)}, RONI ${formatNumber(peak.anomaly, 1, { signed: true })}">${escapeHtml(peak.monthLabel.slice(0, 4))}</span>`;
+    })
+    .join('');
+
   return `
-    <svg class="timeline-axis__oni-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="RONI index chart">
+    <div class="timeline-events" aria-label="Strong El Niño and La Niña peaks">${eventLabels}</div>
+    <svg class="timeline-axis__oni-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id="${areaAboveGradientId}" x1="0" y1="${baselineY}" x2="0" y2="0" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stop-color="${roni[3]}" stop-opacity="0.6" />
