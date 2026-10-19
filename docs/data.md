@@ -17,7 +17,7 @@ Everything the browser loads is served as static files from the repository:
 | `data/temperature.bin.gz` | Monthly temperature anomalies, gzip-compressed binary. |
 | `data/precipitation.bin.gz` | Monthly precipitation totals, gzip-compressed binary. |
 | `data/roni.json` | NOAA CPC Relative Oceanic Nino Index for the ENSO overlay. |
-| `assets/glyphs/` | Map label glyphs (SDF, 24 px, MapLibre PBF format) generated from IBM Plex Sans 3.005 Regular, SemiBold and Italic; SIL Open Font License, see `assets/glyphs/LICENSE.txt`. |
+| `assets/glyphs/` | Map label glyphs (SDF, 24 px, MapLibre PBF format) generated from Archivo 2.001 Regular, SemiBold and Italic; SIL Open Font License, see `assets/glyphs/LICENSE.txt`. |
 | `config/visual-palettes.json` | Colour palettes for the temperature and precipitation scales. |
 | `styles/globe-dark.json` | MapLibre style for the basemap (tiles are fetched from OpenFreeMap). |
 

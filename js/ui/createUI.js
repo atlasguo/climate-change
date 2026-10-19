@@ -1221,7 +1221,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
     clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clonedSvg.setAttribute('width', String(width));
     clonedSvg.setAttribute('height', String(height));
-    clonedSvg.setAttribute('font-family', "'IBM Plex Sans', system-ui, 'Segoe UI', Roboto, sans-serif");
+    clonedSvg.setAttribute('font-family', "'Archivo', 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif");
     const markup = new XMLSerializer().serializeToString(clonedSvg);
     const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml;charset=utf-8' }));
     return new Promise((resolve, reject) => {

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap');
 
 :root {
   color-scheme: dark;
@@ -16,7 +16,7 @@
   --radius-control: 2px;
   --muted-strong: #b4bac0;
   --focus-ring: #e8ecef;
-  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Archivo', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   /* Type scale: captions 11, small 12, body 13, emphasis 15, title 22 */
   --text-2xs: 0.6875rem;
   --text-xs: 0.75rem;
