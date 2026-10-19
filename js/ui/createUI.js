@@ -836,8 +836,6 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   const periodSelect = root.querySelector('[data-period-select]');
   const exportMapButton = root.querySelector('[data-action="export-map"]');
   const exportChartButton = root.querySelector('[data-action="export-chart"]');
-  const controlPanel = root.querySelector('[data-panel="controls"]');
-  const detailPanel = root.querySelector('[data-panel="details"]');
   const appTitle = root.querySelector('[data-bind="app-title"]');
   const monthLabels = metadata.monthLabels;
   const variableButtons = [...root.querySelectorAll('[data-variable]')];
@@ -853,7 +851,11 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   const symbolUnitInfo = root.querySelector('[data-bind="symbol-unit-info"]');
   const startYearSelect = root.querySelector('[data-range-select="start"]');
   const endYearSelect = root.querySelector('[data-range-select="end"]');
-  const mobileToggleButtons = [...root.querySelectorAll('[data-mobile-toggle]')];
+  const appShell = root.querySelector('.app-shell');
+  const mobileTabs = [...root.querySelectorAll('.mobile-sheet__tab')];
+  const mobilePeek = root.querySelector('[data-mobile-peek]');
+  const mobilePeekText = root.querySelector('[data-mobile-peek-text]');
+  const mobileQuery = window.matchMedia('(max-width: 1024px)');
   let currentDetailChartModel = null;
   const lookupCell = (id) => (id == null ? null : getDisplayCell(id) ?? null);
   const defaultDetailCell = () => lookupCell('global') ?? globalCell;
@@ -921,7 +923,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
       const kind = `${tick.medium ? ' is-medium' : ''}${tick.major ? ' is-major' : ''}`;
       const mark = `<span class="timeline-axis__tick${kind}" data-year="${tick.year}" style="left:${(tick.ratio * 100).toFixed(3)}%"><i></i></span>`;
       const label = tick.label
-        ? `<span class="timeline-axis__label${kind}" data-year="${tick.year}" style="left:${((tick.ratio + halfYearRatio) * 100).toFixed(3)}%">${tick.label}</span>`
+        ? `<span class="timeline-axis__label${kind}${tick.year % 20 === 0 ? ' is-twenty' : ''}" data-year="${tick.year}" style="left:${((tick.ratio + halfYearRatio) * 100).toFixed(3)}%">${tick.label}</span>`
         : '';
       return mark + label;
     })
@@ -1125,15 +1127,28 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   symbolStrokeSlider?.addEventListener('change', commitSymbolStrokeOpacity);
 
 
-  for (const button of mobileToggleButtons) {
+  // Phone layout: one bottom sheet shows one panel at a time.
+  function setMobileSheet(open, tab = appShell.dataset.sheetTab) {
+    appShell.dataset.sheetOpen = String(open);
+    appShell.dataset.sheetTab = tab;
+    for (const button of mobileTabs) {
+      button.setAttribute('aria-pressed', String(open && button.dataset.mobileTab === tab));
+    }
+    mobilePeek.setAttribute('aria-expanded', String(open));
+    mobilePeek.setAttribute('aria-controls', `panel-${tab}`);
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  for (const button of mobileTabs) {
     button.addEventListener('click', () => {
-      if (button.dataset.mobileToggle === 'controls') {
-        controlPanel?.classList.toggle('panel--open');
-      } else {
-        detailPanel?.classList.toggle('panel--open');
-      }
+      const tab = button.dataset.mobileTab;
+      const isOpen = appShell.dataset.sheetOpen === 'true';
+      setMobileSheet(!(isOpen && appShell.dataset.sheetTab === tab), tab);
     });
   }
+  mobilePeek.addEventListener('click', () => {
+    setMobileSheet(appShell.dataset.sheetOpen !== 'true');
+  });
 
   function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
@@ -1617,14 +1632,16 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
 
       timelineRoni.hidden = !timelineRoniToggle.checked;
 
-      const hoveredCell = lookupCell(state.hoveredCell);
+      // Touch screens have no hover, so the phone layout only follows the selection.
+      const isPhoneLayout = mobileQuery.matches;
+      const hoveredCell = isPhoneLayout ? null : lookupCell(state.hoveredCell);
       const selectedCell = lookupCell(state.selectedCell);
       const candidateCell = selectedCell ?? hoveredCell;
       if (candidateCell) {
         lastPreviewCellId = candidateCell.id;
       }
       const previewCell =
-        candidateCell ?? (pointerOverRightPanel ? lookupCell(lastPreviewCellId) : null) ?? defaultDetailCell();
+        candidateCell ?? (!isPhoneLayout && pointerOverRightPanel ? lookupCell(lastPreviewCellId) : null) ?? defaultDetailCell();
 
       if (previewCell) {
         const viewportDomains = resolveViewportDomains(state);
@@ -1659,6 +1676,13 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
               </div>
             </div>
           `;
+        }
+
+        if (mobilePeekText) {
+          mobilePeekText.textContent = `${previewCell.isGlobal ? 'Global average' : locationValue} · ${formatDetailStatValue(summary.variable, detailStats.mean)}`;
+        }
+        if (changedKey === 'selectedCell' && state.selectedCell && mobileQuery.matches) {
+          setMobileSheet(true, 'details');
         }
 
         if (selectionAnnouncer && changedKey === 'selectedCell') {

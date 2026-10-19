@@ -305,7 +305,6 @@ h2 {
 
 .segmented__button,
 .ghost-button,
-.mobile-toggle,
 .timeline-period__select,
 .map-actions__button {
   border: 1px solid rgba(167, 173, 179, 0.16);
@@ -321,7 +320,6 @@ h2 {
 
 .segmented__button,
 .ghost-button,
-.mobile-toggle,
 .timeline-period__select,
 .map-actions__button {
   cursor: pointer;
@@ -431,7 +429,6 @@ h2 {
 
 .segmented__button:hover,
 .ghost-button:hover,
-.mobile-toggle:hover,
 .map-actions__button:hover {
   border-color: var(--border-strong);
   transform: translateY(-1px);
@@ -1581,25 +1578,6 @@ input[type='range'] {
     drop-shadow(0 12px 26px rgba(0, 0, 0, 0.42));
 }
 
-.mobile-toggle {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  position: absolute;
-  bottom: 18px;
-  z-index: 12;
-  display: none;
-  padding: 12px 16px;
-  backdrop-filter: blur(16px);
-}
-
-.mobile-toggle--controls {
-  left: 18px;
-}
-
-.mobile-toggle--details {
-  right: 18px;
-}
-
 .maplibregl-ctrl-bottom-left,
 .maplibregl-ctrl-bottom-right,
 .maplibregl-ctrl-top-left,
@@ -1643,90 +1621,6 @@ input[type='range'] {
 }
 
 
-@media (max-width: 1080px) {
-  .app-shell {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-    padding: 12px;
-  }
-
-  .panel--left,
-  .panel--right {
-    position: absolute;
-    top: 16px;
-    left: 0;
-    right: 0;
-    transform: translateY(-18px) scale(0.98);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 180ms ease, transform 180ms ease;
-  }
-
-  .panel--right {
-    top: auto;
-    bottom: 150px;
-  }
-
-  .panel--open {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .map-stage {
-    grid-column: 1;
-    margin: 0;
-  }
-
-  .mobile-toggle {
-    display: inline-flex;
-  }
-
-  .map-search {
-    top: 16px;
-    left: 16px;
-    right: 16px;
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .map-search__status {
-    max-width: none;
-  }
-
-  .timeline-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .timeline-dock__header {
-    flex-wrap: wrap;
-  }
-}
-
-@media (max-width: 720px) {
-  .panel {
-    margin: 0;
-    padding: 18px;
-  }
-
-  .timeline-dock {
-    margin: 0;
-    padding: 10px 12px 12px;
-  }
-
-  .map-stage {
-    min-height: 54vh;
-    margin: 0;
-  }
-
-  .detail-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .timeline-dock__actions {
-    flex-wrap: wrap;
-    gap: 36px;
-  }
-}
 
 .maplibregl-ctrl,
 .maplibregl-ctrl-attrib {
@@ -1936,4 +1830,304 @@ input[type='range'] {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid rgba(167, 173, 179, 0.18);
+}
+
+/* ---------- Phone and tablet layout ---------- */
+.mobile-header,
+.mobile-sheet,
+.mobile-map-panel {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --sheet-bar: calc(96px + env(safe-area-inset-bottom));
+    --header-h: 44px;
+  }
+
+  .app-shell {
+    display: block;
+    padding: 0;
+  }
+
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 15;
+    height: calc(var(--header-h) + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 16px 0;
+    background: linear-gradient(180deg, rgba(5, 6, 7, 0.92), rgba(5, 6, 7, 0.55));
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  .panel-section--title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .map-stage {
+    position: fixed;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .map-search {
+    top: calc(var(--header-h) + env(safe-area-inset-top) + 4px);
+    left: 12px;
+    right: 64px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .map-search__status {
+    max-width: none;
+  }
+
+  .maplibregl-ctrl-top-right {
+    top: calc(var(--header-h) + env(safe-area-inset-top) - 6px);
+  }
+
+  .maplibregl-ctrl-bottom-right {
+    bottom: var(--sheet-bar);
+  }
+
+  /* Panels become the content of the bottom sheet; only the active one is shown. */
+  .panel--left,
+  .panel--right,
+  .timeline-dock,
+  .mobile-map-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--sheet-bar);
+    z-index: 20;
+    display: none;
+    height: min(58vh, 520px);
+    margin: 0;
+    padding: 16px;
+    border-width: 1px 0 0;
+    border-radius: 12px 12px 0 0;
+    overflow-y: auto;
+    background: rgba(16, 16, 17, 0.97);
+  }
+
+  .app-shell[data-sheet-open="true"][data-sheet-tab="details"] .panel--right,
+  .app-shell[data-sheet-open="true"][data-sheet-tab="time"] .timeline-dock,
+  .app-shell[data-sheet-open="true"][data-sheet-tab="style"] .panel--left,
+  .app-shell[data-sheet-open="true"][data-sheet-tab="map"] .mobile-map-panel {
+    display: block;
+  }
+
+  .mobile-sheet {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 21;
+    padding: 0 8px env(safe-area-inset-bottom);
+    border-top: 1px solid var(--border);
+    background: rgba(12, 12, 13, 0.98);
+  }
+
+  .mobile-sheet__peek {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 8px 4px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .mobile-sheet__grip {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(214, 219, 224, 0.4);
+  }
+
+  .mobile-sheet__peek-text {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mobile-sheet__tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    padding: 4px 0 8px;
+  }
+
+  .mobile-sheet__tab {
+    min-height: 44px;
+    border: 1px solid rgba(167, 173, 179, 0.16);
+    border-radius: var(--radius-control);
+    background: var(--bg-card-strong);
+    color: var(--muted-strong);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .mobile-sheet__tab[aria-pressed="true"] {
+    border-color: rgba(224, 228, 232, 0.34);
+    background: rgba(224, 226, 228, 0.14);
+    color: var(--text);
+  }
+
+  .mobile-map-panel .basemap-switcher {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: var(--text-sm);
+  }
+
+  .mobile-map-panel .basemap-switcher__option {
+    min-height: 40px;
+  }
+
+  .panel-section--title + .panel-section {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  /* Timeline: compact controls, 20-year labels, no event labels. */
+  .timeline-dock__header {
+    display: grid;
+    gap: 12px;
+  }
+
+  .timeline-dock__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: end;
+    width: 100%;
+  }
+
+  .timeline-editor {
+    display: contents;
+  }
+
+  .timeline-editor__group,
+  .timeline-period {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .timeline-editor__group > *,
+  .timeline-period > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .timeline-dock__actions > .ghost-button {
+    width: 100%;
+  }
+
+  .timeline-toggle--roni {
+    grid-column: 1 / -1;
+    height: auto;
+    min-height: 34px;
+    white-space: normal;
+  }
+
+  .timeline-events,
+  .timeline-axis__label:not(.is-twenty) {
+    display: none;
+  }
+
+  .timeline-axis {
+    margin: 30px 20px 0;
+  }
+
+  .timeline-handle {
+    width: 36px;
+    margin-left: -18px;
+  }
+
+  .timeline-handle::before {
+    left: 17px;
+  }
+
+  .timeline-handle--start::after,
+  .timeline-handle--start .timeline-handle__tag {
+    left: 17px;
+  }
+
+  .timeline-handle--end::after,
+  .timeline-handle--end .timeline-handle__tag {
+    right: 17px;
+  }
+
+  .timeline-handle__grip {
+    left: 10px;
+    width: 16px;
+    height: 30px;
+    margin-top: -15px;
+  }
+}
+
+/* Landscape phones: the sheet becomes a side panel so the map stays visible. */
+@media (max-width: 1024px) and (orientation: landscape) and (max-height: 600px) {
+  :root {
+    --sheet-bar: calc(56px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-sheet__peek {
+    display: none;
+  }
+
+  .mobile-sheet__tabs {
+    padding-top: 6px;
+  }
+
+  .mobile-sheet__tab {
+    min-height: 40px;
+  }
+
+  .panel--left,
+  .panel--right,
+  .timeline-dock,
+  .mobile-map-panel {
+    top: 0;
+    left: auto;
+    width: min(440px, 58vw);
+    height: auto;
+    border-width: 0 0 0 1px;
+    border-radius: 12px 0 0 0;
+  }
+
+  .map-search {
+    right: auto;
+    width: min(340px, 38vw);
+  }
+
+  .maplibregl-ctrl-top-right {
+    top: calc(var(--header-h) + env(safe-area-inset-top) + 40px);
+  }
+
+  .app-shell[data-sheet-open="true"] .maplibregl-ctrl-top-right {
+    right: min(440px, 58vw);
+  }
 }

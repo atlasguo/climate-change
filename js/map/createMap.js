@@ -1018,7 +1018,29 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     }
   }
 
-  map.addControl(new BasemapControl(), 'bottom-left');
+  const basemapControl = new BasemapControl();
+  map.addControl(basemapControl, 'bottom-left');
+
+  // On phones the basemap options live in the "Map" tab of the bottom sheet.
+  const mobileMapSlot = document.querySelector('[data-mobile-map-slot]');
+  const phoneQuery = window.matchMedia('(max-width: 1024px)');
+  const placeBasemapControl = () => {
+    const target = phoneQuery.matches && mobileMapSlot ? mobileMapSlot : container.querySelector('.maplibregl-ctrl-bottom-left');
+    if (target && basemapControl._container && basemapControl._container.parentElement !== target) {
+      target.append(basemapControl._container);
+    }
+  };
+  placeBasemapControl();
+  phoneQuery.addEventListener('change', placeBasemapControl);
+
+  // The attribution starts expanded; on phones collapse it to the (i) button.
+  map.once('idle', () => {
+    if (phoneQuery.matches) {
+      const attribution = container.querySelector('.maplibregl-ctrl-attrib');
+      attribution?.classList.remove('maplibregl-compact-show');
+      attribution?.removeAttribute('open');
+    }
+  });
 
   let latestVisibleCellIds = new Set();
   const glyphOverlay = createGlyphOverlay({
@@ -1328,6 +1350,12 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     const anchor = selectedAnchor ?? getDisplayCell(selectedCell);
     const nextId = anchor ? displayedCellIdAt(anchor.lat, anchor.lon) : null;
     if (nextId && nextId !== selectedCell) {
+      // Build the new level first so the detail panel can resolve the remapped id.
+      if (currentUnit === 'grid') {
+        getGridDisplayCells(currentGridDegrees);
+      } else {
+        getH3DisplayCells(currentH3Resolution);
+      }
       if (activeSearchSelection?.cellId === selectedCell) {
         activeSearchSelection.cellId = nextId;
       }

@@ -70,9 +70,10 @@ function buildSymbolOptionsMarkup(unit) {
 }
 
 const SHELL = `
-  <div class="app-shell">
+  <div class="app-shell" data-sheet-open="false" data-sheet-tab="details">
     <div class="app-shell__backdrop" aria-hidden="true"></div>
-    <aside class="panel panel--left" data-panel="controls" aria-label="Controls">
+    <div class="mobile-header" aria-hidden="true">Climate Change Visualized</div>
+    <aside class="panel panel--left" id="panel-style" data-panel="controls" aria-label="Controls">
       <section class="panel-section panel-section--title">
         <div class="title-block">
           <h1 class="panel-title" data-bind="app-title">Climate Change Visualized</h1>
@@ -207,11 +208,9 @@ const SHELL = `
       </div>
 
 
-      <button class="mobile-toggle mobile-toggle--controls" data-mobile-toggle="controls">Controls</button>
-      <button class="mobile-toggle mobile-toggle--details" data-mobile-toggle="details">Details</button>
     </main>
 
-    <aside class="panel panel--right" data-panel="details" aria-label="Details">
+    <aside class="panel panel--right" id="panel-details" data-panel="details" aria-label="Details">
       <section class="panel-section">
         <div class="section-head">
           <h2 class="panel-label">Details</h2>
@@ -232,7 +231,7 @@ const SHELL = `
       </section>
     </aside>
 
-    <section class="timeline-dock" aria-labelledby="timeline-heading">
+    <section class="timeline-dock" id="panel-time" aria-labelledby="timeline-heading">
       <div class="timeline-dock__header">
         <h2 class="panel-label" id="timeline-heading">Timeline</h2>
         <div class="timeline-dock__actions">
@@ -288,6 +287,20 @@ const SHELL = `
         </section>
       </div>
     </section>
+    <section class="panel mobile-map-panel" id="panel-map" aria-label="Map options" data-mobile-map-slot></section>
+
+    <nav class="mobile-sheet" aria-label="Panels">
+      <button type="button" class="mobile-sheet__peek" data-mobile-peek aria-expanded="false" aria-controls="panel-details">
+        <span class="mobile-sheet__grip" aria-hidden="true"></span>
+        <span class="mobile-sheet__peek-text" data-mobile-peek-text>Global average</span>
+      </button>
+      <div class="mobile-sheet__tabs">
+        <button type="button" class="mobile-sheet__tab" data-mobile-tab="details" aria-controls="panel-details" aria-pressed="false">Details</button>
+        <button type="button" class="mobile-sheet__tab" data-mobile-tab="time" aria-controls="panel-time" aria-pressed="false">Time</button>
+        <button type="button" class="mobile-sheet__tab" data-mobile-tab="style" aria-controls="panel-style" aria-pressed="false">Style</button>
+        <button type="button" class="mobile-sheet__tab" data-mobile-tab="map" aria-controls="panel-map" aria-pressed="false">Map</button>
+      </div>
+    </nav>
   </div>
 `;
 
