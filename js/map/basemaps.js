@@ -47,6 +47,22 @@ const NIGHT_THEME = {
 
 const PAGE_BACKGROUND = { dark: '#050709', light: '#e9ecef' };
 
+// A faint atmosphere outlines the globe against the page, most visible when zoomed out.
+const SKY = {
+  dark: {
+    'sky-color': '#0a1622',
+    'horizon-color': '#24435c',
+    'fog-color': '#0a1622',
+    'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 0.85, 4, 0.5, 6, 0.2]
+  },
+  light: {
+    'sky-color': '#dbe4eb',
+    'horizon-color': '#a9bccb',
+    'fog-color': '#dbe4eb',
+    'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 0.7, 4, 0.4, 6, 0.15]
+  }
+};
+
 const water = (fill, outline) => ({
   id: 'bm-water',
   type: 'fill',
@@ -80,7 +96,7 @@ export const BASEMAPS = [
         : [
             { id: 'bm-land', type: 'background', paint: { 'background-color': '#050709' } },
             { id: 'bm-ne-relief', type: 'raster', source: 'ne2-shaded', paint: { 'raster-saturation': -1, 'raster-brightness-max': 0.18, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.15, 4, 0.03] } },
-            water('#181c1f'),
+            water('#111a22'),
             ice('#5f6266', 0.12)
           ]
     })
@@ -134,7 +150,7 @@ export const BASEMAPS = [
                 }
           },
           light ? ice('#ffffff', 0.55) : ice('#9aa6b0', 0.14),
-          light ? water('#c4d0da', '#9fb0be') : water('#06090c', '#323a42'),
+          light ? water('#c4d0da', '#9fb0be') : water('#0e1923', '#2c3c4a'),
           {
             id: 'bm-rivers',
             type: 'line',
@@ -280,6 +296,7 @@ export async function applyBasemap(map, basemapId, beforeLayerId, theme = 'dark'
   if (map.getLayer('vector-background')) {
     map.setPaintProperty('vector-background', 'background-color', PAGE_BACKGROUND[theme] ?? PAGE_BACKGROUND.dark);
   }
+  map.setSky(SKY[theme] ?? SKY.dark);
   for (const [id, source] of Object.entries(definition.sources ?? {})) {
     map.addSource(id, source);
   }
