@@ -848,7 +848,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   const symbolOpacityValue = root.querySelector('[data-bind="symbol-opacity-value"]');
   const symbolStrokeSlider = root.querySelector('[data-symbol-stroke]');
   const symbolStrokeValue = root.querySelector('[data-bind="symbol-stroke-value"]');
-  const showLabelsToggle = root.querySelector('[data-show-labels]');
+
 
   const symbolUnitInfo = root.querySelector('[data-bind="symbol-unit-info"]');
   const startYearSelect = root.querySelector('[data-range-select="start"]');
@@ -1124,9 +1124,6 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   symbolStrokeSlider?.addEventListener('input', commitSymbolStrokeOpacity);
   symbolStrokeSlider?.addEventListener('change', commitSymbolStrokeOpacity);
 
-  showLabelsToggle?.addEventListener('change', () => {
-    store.setShowLabels(showLabelsToggle.checked);
-  });
 
   for (const button of mobileToggleButtons) {
     button.addEventListener('click', () => {
@@ -1617,9 +1614,6 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
         }
       }
 
-      if (showLabelsToggle) {
-        showLabelsToggle.checked = state.showLabels !== false;
-      }
 
       timelineRoni.hidden = !timelineRoniToggle.checked;
 

@@ -869,46 +869,6 @@ h2 {
   backdrop-filter: blur(12px);
 }
 
-.map-search__filters {
-  grid-column: 1 / -1;
-  display: flex;
-  gap: 12px;
-  margin-top: 6px;
-}
-
-.map-search__filter-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  cursor: pointer;
-  user-select: none;
-  font-size: var(--text-xs);
-  color: #d9dde1;
-  padding: 6px 10px;
-  border: 1px solid rgba(167, 173, 179, 0.16);
-  border-radius: 4px;
-  background: rgba(14, 16, 19, 0.6);
-  backdrop-filter: blur(8px);
-  transition: background-color 150ms ease, border-color 150ms ease;
-}
-
-.map-search__filter-item:hover {
-  background: rgba(14, 16, 19, 0.75);
-  border-color: rgba(214, 219, 224, 0.28);
-}
-
-.map-search__checkbox {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-  accent-color: #7da3c0;
-}
-
-.map-search__filter-label {
-  color: #d9dde1;
-}
-
 
 .map-search-pin {
   display: grid;
@@ -1970,4 +1930,10 @@ input[type='range'] {
 .basemap-switcher__status {
   margin: 4px 0 0;
   color: #a3aab0;
+}
+
+.basemap-switcher__labels {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(167, 173, 179, 0.18);
 }

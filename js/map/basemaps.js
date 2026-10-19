@@ -259,9 +259,10 @@ export async function applyBasemap(map, basemapId, beforeLayerId) {
 // Shared reference layers drawn above the data cells: country borders and place names from
 // OpenMapTiles (OpenFreeMap), styled per basemap.
 const NAME = ['coalesce', ['get', 'name:en'], ['get', 'name_en'], ['get', 'name:latin'], ['get', 'name']];
-const REGULAR = ['Noto Sans Regular'];
-const BOLD = ['Noto Sans Bold'];
-const ITALIC = ['Noto Sans Italic'];
+// IBM Plex Sans glyphs are generated into assets/glyphs to match the page typeface.
+const REGULAR = ['IBM Plex Sans Regular'];
+const BOLD = ['IBM Plex Sans SemiBold'];
+const ITALIC = ['IBM Plex Sans Italic'];
 
 export const REFERENCE_BORDER_LAYERS = ['ref-boundary', 'ref-boundary-disputed'];
 export const REFERENCE_LABEL_LAYERS = ['ref-state', 'ref-city-dot', 'ref-city', 'ref-water-name', 'ref-country'];

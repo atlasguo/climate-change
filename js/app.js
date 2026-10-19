@@ -192,12 +192,6 @@ const SHELL = `
           </svg>
         </button>
         <div class="map-search__status" data-map-search-status role="status" aria-live="polite" hidden></div>
-        <div class="map-search__filters" role="group" aria-label="Map reference layers">
-          <label class="map-search__filter-item">
-            <input type="checkbox" data-show-labels class="map-search__checkbox" checked />
-            <span class="map-search__filter-label">Labels</span>
-          </label>
-        </div>
       </form>
       <div id="map" class="map-canvas"></div>
       <p class="sr-only" id="map-keyboard-help">Use the arrow keys to pan and the plus and minus keys to zoom. Press Enter to select the cell at the center of the map and Escape to clear the selection.</p>

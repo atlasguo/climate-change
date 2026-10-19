@@ -730,9 +730,11 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     element: searchPinElement,
     anchor: 'bottom'
   });
+  const style = await (await fetch(MAP_STYLE_URL)).json();
+  style.glyphs = `${new URL('../../assets/glyphs/', import.meta.url).href}{fontstack}/{range}.pbf`;
   const map = new maplibregl.Map({
     container,
-    style: MAP_STYLE_URL,
+    style,
     center: initialView.center,
     zoom: initialView.zoom,
     minZoom: initialView.zoom,
@@ -977,11 +979,19 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
             <span>${item.label}</span>
           </label>
         `).join('')}
+        <label class="basemap-switcher__option basemap-switcher__labels">
+          <input type="checkbox" data-show-labels ${store.getState().showLabels !== false ? 'checked' : ''} />
+          <span>Place names</span>
+        </label>
         <p class="basemap-switcher__status" data-basemap-status role="status" aria-live="polite"></p>
       `;
       const status = wrapper.querySelector('[data-basemap-status]');
       wrapper.addEventListener('change', async (event) => {
         const input = event.target;
+        if (input instanceof HTMLInputElement && input.matches('[data-show-labels]')) {
+          store.setShowLabels(input.checked);
+          return;
+        }
         if (!(input instanceof HTMLInputElement) || input.name !== 'basemap-switcher') {
           return;
         }
@@ -1220,6 +1230,11 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     if (!Number.isFinite(lngLat?.lat) || !Number.isFinite(lngLat?.lng) || !isPointerOnFrontHemisphere(lngLat)) {
       return null;
     }
+    // Off the globe, unproject returns an unrelated point; projecting it back exposes the mismatch.
+    const projected = map.project(lngLat);
+    if (Math.hypot(projected.x - event.point.x, projected.y - event.point.y) > 2) {
+      return null;
+    }
     return lngLat;
   }
 
@@ -1275,6 +1290,11 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
   function handleMapClick(event) {
     const lngLat = resolvePointerLngLat(event);
     if (!lngLat) {
+      // Clicking the space around the globe clears the selection (details return to the global average).
+      if (currentAppState.selectedCell) {
+        clearSearchSelectionMarker();
+        store.selectCell(null);
+      }
       return;
     }
     const cellId = displayedCellIdAt(lngLat.lat, lngLat.lng);
