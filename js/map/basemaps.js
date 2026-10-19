@@ -50,15 +50,15 @@ const PAGE_BACKGROUND = { dark: '#050709', light: '#e9ecef' };
 // A faint atmosphere outlines the globe against the page, most visible when zoomed out.
 const SKY = {
   dark: {
-    'sky-color': '#0a1622',
-    'horizon-color': '#24435c',
-    'fog-color': '#0a1622',
+    'sky-color': '#111417',
+    'horizon-color': '#33393f',
+    'fog-color': '#111417',
     'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 0.85, 4, 0.5, 6, 0.2]
   },
   light: {
-    'sky-color': '#dbe4eb',
-    'horizon-color': '#a9bccb',
-    'fog-color': '#dbe4eb',
+    'sky-color': '#e0e3e6',
+    'horizon-color': '#b4babf',
+    'fog-color': '#e0e3e6',
     'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 0.7, 4, 0.4, 6, 0.15]
   }
 };
@@ -90,13 +90,13 @@ export const BASEMAPS = [
         ? [
             { id: 'bm-land', type: 'background', paint: { 'background-color': '#e8ebee' } },
             { id: 'bm-ne-relief', type: 'raster', source: 'ne2-shaded', paint: { 'raster-saturation': -1, 'raster-brightness-min': 0.7, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.25, 4, 0.08] } },
-            water('#cfd6dc'),
+            water('#d3d6d9'),
             ice('#ffffff', 0.6)
           ]
         : [
             { id: 'bm-land', type: 'background', paint: { 'background-color': '#050709' } },
             { id: 'bm-ne-relief', type: 'raster', source: 'ne2-shaded', paint: { 'raster-saturation': -1, 'raster-brightness-max': 0.18, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.15, 4, 0.03] } },
-            water('#111a22'),
+            water('#15181b'),
             ice('#5f6266', 0.12)
           ]
     })
@@ -150,7 +150,7 @@ export const BASEMAPS = [
                 }
           },
           light ? ice('#ffffff', 0.55) : ice('#9aa6b0', 0.14),
-          light ? water('#c4d0da', '#9fb0be') : water('#0e1923', '#2c3c4a'),
+          light ? water('#cdd1d5', '#a9afb5') : water('#131619', '#30363c'),
           {
             id: 'bm-rivers',
             type: 'line',
@@ -158,7 +158,7 @@ export const BASEMAPS = [
             'source-layer': 'waterway',
             filter: ['==', ['get', 'class'], 'river'],
             paint: {
-              'line-color': light ? '#8fa9bd' : '#253744',
+              'line-color': light ? '#9fa7ae' : '#2a3036',
               'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.4, 6, 1.2]
             }
           }
