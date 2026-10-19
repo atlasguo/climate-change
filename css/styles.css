@@ -1927,8 +1927,8 @@ input[type='range'] {
   box-shadow: 0 0 0 2px #0e0e0f, 0 0 0 4px var(--focus-ring);
 }
 
-/* Temporary basemap comparison control. */
-.basemap-preview {
+/* Basemap switcher. */
+.basemap-switcher {
   margin: 0 0 10px 10px;
   padding: 8px 10px 6px;
   border: 1px solid rgba(167, 173, 179, 0.24);
@@ -1940,7 +1940,7 @@ input[type='range'] {
   backdrop-filter: blur(12px);
 }
 
-.basemap-preview__title {
+.basemap-switcher__title {
   padding: 0;
   margin-bottom: 4px;
   color: #a3aab0;
@@ -1950,7 +1950,7 @@ input[type='range'] {
   text-transform: uppercase;
 }
 
-.basemap-preview__option {
+.basemap-switcher__option {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1958,16 +1958,16 @@ input[type='range'] {
   cursor: pointer;
 }
 
-.basemap-preview__option input {
+.basemap-switcher__option input {
   margin: 0;
   accent-color: #cfd3d7;
 }
 
-.basemap-preview__status:empty {
+.basemap-switcher__status:empty {
   display: none;
 }
 
-.basemap-preview__status {
+.basemap-switcher__status {
   margin: 4px 0 0;
   color: #a3aab0;
 }

@@ -17,9 +17,6 @@ Everything the browser loads is served as static files from the repository:
 | `data/temperature.bin.gz` | Monthly temperature anomalies, gzip-compressed binary. |
 | `data/precipitation.bin.gz` | Monthly precipitation totals, gzip-compressed binary. |
 | `data/roni.json` | NOAA CPC Relative Oceanic Nino Index for the ENSO overlay. |
-| `data/countries.json` | Natural Earth admin-0 country polygons, used to place country labels. |
-| `data/ne_50m_admin_0_boundary_lines_land.geojson` | Natural Earth 1:50m land boundary lines. |
-| `data/ne_populated_places_50m.json` | Natural Earth 1:50m populated places used for city labels. |
 | `config/visual-palettes.json` | Colour palettes for the temperature and precipitation scales. |
 | `styles/globe-dark.json` | MapLibre style for the basemap (tiles are fetched from OpenFreeMap). |
 
@@ -59,7 +56,7 @@ Both files are gzip-compressed, little-endian and **cell-major**: all months of 
 
 - **Climate:** ERA5 monthly averaged data on single levels (`reanalysis-era5-single-levels-monthly-means`), variables `2m_temperature` and `total_precipitation`, from the Copernicus Climate Change Service Climate Data Store. ERA5 `tp` monthly means are metres per day; the build converts them to mm/month using the number of days in each month.
 - **ENSO:** NOAA CPC Relative Oceanic Nino Index (RONI), 1950 onwards, clamped to `2025-12`.
-- **Reference geography:** Natural Earth.
+- **Reference geography:** country borders and place names come from OpenStreetMap (OpenMapTiles vector tiles served by OpenFreeMap); the basemap shaded relief is Natural Earth.
 
 ## Regenerating
 

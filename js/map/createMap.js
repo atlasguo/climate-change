@@ -3,7 +3,7 @@ import { cellToBoundary, cellToChildren, getRes0Cells, latLngToCell } from 'h3-j
 import { buildRenderableCells, getCommittedValueDomains, getDensityLevelForZoom } from '../state/selectors.js';
 import { getDisplayCell, getGridCellIdAt, getGridDisplayCells, getGridIndexes, getH3DisplayCells } from '../data/displayCells.js';
 import { createGlyphOverlay } from './createGlyphOverlay.js';
-import { applyBasemap, BASEMAPS } from './basemaps.js';
+import { applyBasemap, applyReferenceTheme, BASEMAPS, buildReferenceLayers, getBasemapTheme, REFERENCE_LABEL_LAYERS } from './basemaps.js';
 
 const H3_SOURCE_ID = 'climate-h3-cells';
 const H3_FILL_LAYER_ID = 'climate-h3-fill';
@@ -20,12 +20,6 @@ const GRID_HOVERED_FILL_LAYER_ID = 'climate-grid-hovered-fill';
 const GRID_HOVERED_LAYER_ID = 'climate-grid-hovered';
 const GRID_SELECTED_FILL_LAYER_ID = 'climate-grid-selected-fill';
 const GRID_SELECTED_LAYER_ID = 'climate-grid-selected';
-const COUNTRY_BORDER_SOURCE_ID = 'climate-country-borders';
-const COUNTRY_BORDER_LAYER_ID = 'climate-country-borders-layer';
-const COUNTRY_LABEL_SOURCE_ID = 'climate-country-labels';
-const COUNTRY_LABEL_LAYER_ID = 'climate-country-labels-layer';
-const CITY_LABEL_SOURCE_ID = 'climate-city-labels';
-const CITY_LABEL_LAYER_ID = 'climate-city-labels-layer';
 const H3_FEATURE_COLLECTION_CACHE = new Map();
 const GRID_FEATURE_COLLECTION_CACHE = new Map();
 const GRID_LINE_FEATURE_COLLECTION_CACHE = new Map();
@@ -38,9 +32,6 @@ const H3_ADAPTIVE_REFERENCE_GLYPH_SCALE = {
   glyphHeightScale: 1
 };
 const MAP_STYLE_URL = new URL('../../styles/globe-dark.json', import.meta.url).href;
-const COUNTRY_LABELS_URL = new URL('../../data/countries.json', import.meta.url).href;
-const COUNTRY_BORDERS_URL = new URL('../../data/ne_50m_admin_0_boundary_lines_land.geojson', import.meta.url).href;
-const CITY_LABELS_URL = new URL('../../data/ne_populated_places_50m.json', import.meta.url).href;
 const RENDER_LOADING_COPY = {
   init: {
     title: 'Preparing globe',
@@ -80,142 +71,6 @@ const RENDER_LOADING_COPY = {
   }
 };
 
-function extractRings(geometry) {
-  if (!geometry) {
-    return [];
-  }
-
-  if (geometry.type === 'Polygon') {
-    return Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
-  }
-
-  if (geometry.type === 'MultiPolygon') {
-    if (!Array.isArray(geometry.coordinates)) {
-      return [];
-    }
-    return geometry.coordinates.flat();
-  }
-
-  return [];
-}
-
-function ringCenter(ring) {
-  if (!Array.isArray(ring) || !ring.length) {
-    return null;
-  }
-
-  let minLon = Infinity;
-  let maxLon = -Infinity;
-  let minLat = Infinity;
-  let maxLat = -Infinity;
-
-  for (const point of ring) {
-    if (!Array.isArray(point) || point.length < 2) {
-      continue;
-    }
-    const lon = Number(point[0]);
-    const lat = Number(point[1]);
-    if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
-      continue;
-    }
-    minLon = Math.min(minLon, lon);
-    maxLon = Math.max(maxLon, lon);
-    minLat = Math.min(minLat, lat);
-    maxLat = Math.max(maxLat, lat);
-  }
-
-  if (![minLon, maxLon, minLat, maxLat].every(Number.isFinite)) {
-    return null;
-  }
-
-  return [(minLon + maxLon) / 2, (minLat + maxLat) / 2];
-}
-
-function buildCountryLabelFeatureCollection(countryGeoJson) {
-  const features = Array.isArray(countryGeoJson?.features) ? countryGeoJson.features : [];
-
-  return {
-    type: 'FeatureCollection',
-    features: features
-      .map((feature, index) => {
-        const properties = feature?.properties ?? {};
-        const labelLon = Number(properties.LABEL_X);
-        const labelLat = Number(properties.LABEL_Y);
-        let center = null;
-
-        if (Number.isFinite(labelLon) && Number.isFinite(labelLat)) {
-          center = [labelLon, labelLat];
-        } else {
-          const rings = extractRings(feature?.geometry);
-          center = ringCenter(rings[0]);
-        }
-
-        if (!Array.isArray(center)) {
-          return null;
-        }
-
-        return {
-          type: 'Feature',
-          id: properties.ADM0_A3 ?? properties.ISO_A3 ?? properties.NAME ?? `country-${index}`,
-          properties: {
-            NAME: properties.NAME ?? properties.ADMIN ?? properties.NAME_LONG ?? '',
-            NAME_LONG: properties.NAME_LONG ?? properties.NAME ?? properties.ADMIN ?? '',
-            NAME_EN: properties.NAME_EN ?? properties.NAME ?? properties.ADMIN ?? '',
-            LABELRANK: Number(properties.LABELRANK ?? properties.scalerank ?? 99),
-            MIN_LABEL: Number(properties.MIN_LABEL ?? 0),
-            MAX_LABEL: Number(properties.MAX_LABEL ?? 24)
-          },
-          geometry: {
-            type: 'Point',
-            coordinates: center
-          }
-        };
-      })
-      .filter(Boolean)
-  };
-}
-
-function normalizeCityLabelFeatureCollection(cityGeoJson) {
-  const features = Array.isArray(cityGeoJson?.features) ? cityGeoJson.features : [];
-
-  return {
-    type: 'FeatureCollection',
-    features: features
-      .map((feature, index) => {
-        const properties = feature?.properties ?? {};
-        const coordinates = feature?.geometry?.coordinates;
-        if (!Array.isArray(coordinates) || coordinates.length < 2) {
-          return null;
-        }
-
-        const lon = Number(coordinates[0]);
-        const lat = Number(coordinates[1]);
-        if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
-          return null;
-        }
-
-        return {
-          type: 'Feature',
-          id: properties.wikidataid ?? properties.NAMEASCII ?? properties.NAME ?? `city-${index}`,
-          properties: {
-            NAME: properties.NAME ?? properties.NAMEASCII ?? '',
-            NAMEASCII: properties.NAMEASCII ?? properties.NAME ?? '',
-            LABELRANK: Number(properties.LABELRANK ?? properties.labelrank ?? 99),
-            SCALERANK: Number(properties.SCALERANK ?? properties.scalerank ?? 99),
-            POP_MAX: Number(properties.POP_MAX ?? properties.pop_max ?? 0),
-            ADM0CAP: Number(properties.ADM0CAP ?? properties.adm0cap ?? 0),
-            WORLDCITY: Number(properties.WORLDCITY ?? properties.worldcity ?? 0)
-          },
-          geometry: {
-            type: 'Point',
-            coordinates: [lon, lat]
-          }
-        };
-      })
-      .filter(Boolean)
-  };
-}
-
 function setLayerVisibility(map, layerId, visible) {
   if (!map.getLayer(layerId)) {
     return;
@@ -224,13 +79,20 @@ function setLayerVisibility(map, layerId, visible) {
 }
 
 function syncLabelLayerVisibility(map, state) {
-  setLayerVisibility(map, COUNTRY_BORDER_LAYER_ID, Boolean(state?.showCountryBorder));
-  setLayerVisibility(map, COUNTRY_LABEL_LAYER_ID, Boolean(state?.showCountryLabel));
-  setLayerVisibility(map, CITY_LABEL_LAYER_ID, Boolean(state?.showCityLabel));
+  for (const layerId of REFERENCE_LABEL_LAYERS) {
+    setLayerVisibility(map, layerId, state?.showLabels !== false);
+  }
 }
 
-function liftInteractiveCellLayers(map) {
-  const layerIds = [
+// Borders and place names sit above the data cells; hover and selection outlines go between them.
+function addReferenceLayers(map, state, theme) {
+  for (const layer of buildReferenceLayers(theme)) {
+    if (!map.getLayer(layer.id)) {
+      map.addLayer(layer);
+    }
+  }
+  const firstLabelLayer = REFERENCE_LABEL_LAYERS[0];
+  for (const layerId of [
     H3_HOVERED_FILL_LAYER_ID,
     GRID_HOVERED_FILL_LAYER_ID,
     H3_SELECTED_FILL_LAYER_ID,
@@ -239,209 +101,13 @@ function liftInteractiveCellLayers(map) {
     GRID_HOVERED_LAYER_ID,
     H3_SELECTED_LAYER_ID,
     GRID_SELECTED_LAYER_ID
-  ];
-
-  for (const layerId of layerIds) {
+  ]) {
     if (map.getLayer(layerId)) {
-      map.moveLayer(layerId);
+      map.moveLayer(layerId, firstLabelLayer);
     }
   }
-}
-
-async function addReferenceLabelLayers(map, state) {
-  let countryBordersJson = null;
-  let countriesJson = null;
-  let citiesJson = null;
-
-  try {
-    const [countryBorderResponse, countryResponse, cityResponse] = await Promise.all([
-      fetch(COUNTRY_BORDERS_URL),
-      fetch(COUNTRY_LABELS_URL),
-      fetch(CITY_LABELS_URL)
-    ]);
-    if (countryBorderResponse.ok) {
-      countryBordersJson = await countryBorderResponse.json();
-    }
-    if (countryResponse.ok) {
-      countriesJson = await countryResponse.json();
-    }
-    if (cityResponse.ok) {
-      citiesJson = await cityResponse.json();
-    }
-  } catch {
-    return;
-  }
-
-  if (countriesJson && !map.getSource(COUNTRY_LABEL_SOURCE_ID)) {
-    if (countryBordersJson) {
-      map.addSource(COUNTRY_BORDER_SOURCE_ID, {
-        type: 'geojson',
-        data: countryBordersJson
-      });
-    }
-
-    map.addSource(COUNTRY_LABEL_SOURCE_ID, {
-      type: 'geojson',
-      data: buildCountryLabelFeatureCollection(countriesJson)
-    });
-
-    if (countryBordersJson) {
-      map.addLayer({
-        id: COUNTRY_BORDER_LAYER_ID,
-        type: 'line',
-        source: COUNTRY_BORDER_SOURCE_ID,
-        minzoom: 1,
-        maxzoom: 6,
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-          visibility: 'none'
-        },
-        paint: {
-          'line-color': '#181c1f',
-          'line-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            1,
-            0.72,
-            4,
-            0.86,
-            6,
-            0.94
-          ],
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            1,
-            1.45,
-            4,
-            1.95,
-            6,
-            2.45
-          ]
-        }
-      });
-    }
-
-    map.addLayer({
-      id: COUNTRY_LABEL_LAYER_ID,
-      type: 'symbol',
-      source: COUNTRY_LABEL_SOURCE_ID,
-      minzoom: 1,
-      maxzoom: 6,
-      filter: ['<=', ['coalesce', ['get', 'LABELRANK'], 99], 6],
-      layout: {
-        'text-field': ['upcase', ['coalesce', ['get', 'NAME_EN'], ['get', 'NAME_LONG'], ['get', 'NAME']]],
-        'text-size': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          2,
-          9,
-          4,
-          10,
-          6.2,
-          11.4
-        ],
-        'text-font': ['Noto Sans Regular'],
-        'text-letter-spacing': 0.08,
-        'text-max-width': 8,
-        'text-allow-overlap': false,
-        'text-ignore-placement': false,
-        'visibility': 'none'
-      },
-      paint: {
-        'text-color': '#cdd3d8',
-        'text-halo-color': 'rgba(4, 6, 8, 0.86)',
-        'text-halo-width': 1.35,
-        'text-halo-blur': 0.55,
-        'text-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          1,
-          0.72,
-          4,
-          0.82,
-          6,
-          0.9
-        ]
-      }
-    });
-  }
-
-  if (citiesJson && !map.getSource(CITY_LABEL_SOURCE_ID)) {
-    map.addSource(CITY_LABEL_SOURCE_ID, {
-      type: 'geojson',
-      data: normalizeCityLabelFeatureCollection(citiesJson)
-    });
-
-    map.addLayer({
-      id: CITY_LABEL_LAYER_ID,
-      type: 'symbol',
-      source: CITY_LABEL_SOURCE_ID,
-      minzoom: 2,
-      maxzoom: 6.2,
-      filter: [
-        'all',
-        ['<=', ['coalesce', ['get', 'LABELRANK'], 99], 7],
-        [
-          'any',
-          ['>=', ['coalesce', ['get', 'POP_MAX'], 0], 250000],
-          ['==', ['coalesce', ['get', 'ADM0CAP'], 0], 1],
-          ['==', ['coalesce', ['get', 'WORLDCITY'], 0], 1]
-        ]
-      ],
-      layout: {
-        'text-field': ['coalesce', ['get', 'NAMEASCII'], ['get', 'NAME']],
-        'text-size': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          2,
-          9,
-          4,
-          10,
-          6.2,
-          11.4
-        ],
-        'text-font': ['Noto Sans Regular'],
-        'text-letter-spacing': 0.02,
-        'text-max-width': 6,
-        'text-allow-overlap': false,
-        'text-ignore-placement': false,
-        'visibility': 'none'
-      },
-      paint: {
-        'text-color': [
-          'case',
-          ['==', ['coalesce', ['get', 'ADM0CAP'], 0], 1],
-          '#eef2f5',
-          '#bac2c9'
-        ],
-        'text-halo-color': 'rgba(4, 6, 8, 0.84)',
-        'text-halo-width': 1.15,
-        'text-halo-blur': 0.5,
-        'text-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          2,
-          0.78,
-          4,
-          0.88,
-          6.2,
-          0.96
-        ]
-      }
-    });
-  }
-
   syncLabelLayerVisibility(map, state);
 }
-
 
 function buildOverlayState(rawCells, metadata, state, densityLevel, h3Resolution, gridDegrees, viewportDomains = null) {
   const isGridMode = state.unit === 'grid';
@@ -1289,38 +955,40 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
 
   map.addControl(new GlobeControls(), 'top-right');
 
-  // Temporary control for comparing basemap candidates; remove once one is chosen.
-  const BASEMAP_STORAGE_KEY = 'ccv-basemap-preview';
-  let activeBasemap = 'minimal';
+  const BASEMAP_STORAGE_KEY = 'ccv-basemap';
+  const DEFAULT_BASEMAP = 'terrain';
+  let activeBasemap = DEFAULT_BASEMAP;
   try {
-    activeBasemap = window.localStorage.getItem(BASEMAP_STORAGE_KEY) ?? 'minimal';
+    const stored = window.localStorage.getItem(BASEMAP_STORAGE_KEY);
+    activeBasemap = BASEMAPS.some((item) => item.id === stored) ? stored : DEFAULT_BASEMAP;
   } catch {
-    activeBasemap = 'minimal';
+    activeBasemap = DEFAULT_BASEMAP;
   }
 
-  class BasemapPreviewControl {
+  class BasemapControl {
     onAdd() {
       const wrapper = document.createElement('fieldset');
-      wrapper.className = 'maplibregl-ctrl basemap-preview';
+      wrapper.className = 'maplibregl-ctrl basemap-switcher';
       wrapper.innerHTML = `
-        <legend class="basemap-preview__title">Basemap (preview)</legend>
+        <legend class="basemap-switcher__title">Basemap</legend>
         ${BASEMAPS.map((item) => `
-          <label class="basemap-preview__option" title="${item.description}">
-            <input type="radio" name="basemap-preview" value="${item.id}" ${item.id === activeBasemap ? 'checked' : ''} />
+          <label class="basemap-switcher__option" title="${item.description}">
+            <input type="radio" name="basemap-switcher" value="${item.id}" ${item.id === activeBasemap ? 'checked' : ''} />
             <span>${item.label}</span>
           </label>
         `).join('')}
-        <p class="basemap-preview__status" data-basemap-status role="status" aria-live="polite"></p>
+        <p class="basemap-switcher__status" data-basemap-status role="status" aria-live="polite"></p>
       `;
       const status = wrapper.querySelector('[data-basemap-status]');
       wrapper.addEventListener('change', async (event) => {
         const input = event.target;
-        if (!(input instanceof HTMLInputElement) || input.name !== 'basemap-preview') {
+        if (!(input instanceof HTMLInputElement) || input.name !== 'basemap-switcher') {
           return;
         }
         status.textContent = 'Loading…';
         try {
           activeBasemap = await applyBasemap(map, input.value, H3_FILL_LAYER_ID);
+          applyReferenceTheme(map, getBasemapTheme(activeBasemap));
           status.textContent = '';
           try {
             window.localStorage.setItem(BASEMAP_STORAGE_KEY, activeBasemap);
@@ -1340,7 +1008,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     }
   }
 
-  map.addControl(new BasemapPreviewControl(), 'bottom-left');
+  map.addControl(new BasemapControl(), 'bottom-left');
 
   let latestVisibleCellIds = new Set();
   const glyphOverlay = createGlyphOverlay({
@@ -1761,7 +1429,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
     if (activeBasemap !== 'minimal') {
       applyBasemap(map, activeBasemap, H3_FILL_LAYER_ID).catch(() => applyBasemap(map, 'minimal'));
     }
-    void addReferenceLabelLayers(map, currentAppState).then(() => liftInteractiveCellLayers(map));
+    addReferenceLayers(map, currentAppState, getBasemapTheme(activeBasemap));
     setUnitLayerVisibility(map, currentUnit);
     applyDisplayedGeometry();
     updateLineLayerOpacity(currentAppState.strokeOpacity ?? 1);
@@ -1901,9 +1569,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
       }
 
       if (
-        changedKey === 'showCountryBorder' ||
-        changedKey === 'showCountryLabel' ||
-        changedKey === 'showCityLabel' ||
+        changedKey === 'showLabels' ||
         changedKey === 'init'
       ) {
         syncLabelLayerVisibility(map, state);

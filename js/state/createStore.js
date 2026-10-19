@@ -28,9 +28,7 @@ export function createStore(metadata) {
     glyphHeightScale: 0.5,
     symbolOpacity: 0.9,
     strokeOpacity: 0.10,
-    showCountryBorder: false,
-    showCountryLabel: false,
-    showCityLabel: false,
+    showLabels: true,
     cameraState: null,
     viewportDomains: null,
     displayedH3Resolution: null,
@@ -125,14 +123,8 @@ export function createStore(metadata) {
     setStrokeOpacity(strokeOpacity) {
       patch({ strokeOpacity }, 'strokeOpacity');
     },
-    setShowCountryBorder(showCountryBorder) {
-      patch({ showCountryBorder }, 'showCountryBorder');
-    },
-    setShowCountryLabel(showCountryLabel) {
-      patch({ showCountryLabel }, 'showCountryLabel');
-    },
-    setShowCityLabel(showCityLabel) {
-      patch({ showCityLabel }, 'showCityLabel');
+    setShowLabels(showLabels) {
+      patch({ showLabels }, 'showLabels');
     },
     setDisplayedResolution(displayedH3Resolution, displayedGridDegrees) {
       if (state.displayedH3Resolution === displayedH3Resolution && state.displayedGridDegrees === displayedGridDegrees) {

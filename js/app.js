@@ -192,18 +192,10 @@ const SHELL = `
           </svg>
         </button>
         <div class="map-search__status" data-map-search-status role="status" aria-live="polite" hidden></div>
-        <div class="map-search__filters" role="group" aria-label="Map labels">
+        <div class="map-search__filters" role="group" aria-label="Map reference layers">
           <label class="map-search__filter-item">
-            <input type="checkbox" data-show-country-border class="map-search__checkbox" />
-            <span class="map-search__filter-label">Country borders</span>
-          </label>
-          <label class="map-search__filter-item">
-            <input type="checkbox" data-show-country-label class="map-search__checkbox" />
-            <span class="map-search__filter-label">Country names</span>
-          </label>
-          <label class="map-search__filter-item">
-            <input type="checkbox" data-show-city-label class="map-search__checkbox" />
-            <span class="map-search__filter-label">City names</span>
+            <input type="checkbox" data-show-labels class="map-search__checkbox" checked />
+            <span class="map-search__filter-label">Labels</span>
           </label>
         </div>
       </form>

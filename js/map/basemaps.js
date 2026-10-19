@@ -6,27 +6,45 @@ const PREFIX = 'bm-';
 const NASA_GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const NASA_ATTRIBUTION = '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noopener">NASA EOSDIS GIBS</a>';
 
-const boundaryLayer = (color, opacity) => ({
-  id: 'bm-boundary',
-  type: 'line',
-  source: 'openmaptiles',
-  'source-layer': 'boundary',
-  filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1]],
-  paint: {
-    'line-color': color,
-    'line-opacity': opacity,
-    'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.5, 6, 1.2]
-  }
-});
+// Colours for the shared reference layers (borders and place names) on each basemap.
+const DARK_THEME = {
+  border: 'rgba(196, 204, 211, 0.42)',
+  country: '#d9dee3',
+  state: '#9aa3ab',
+  city: '#c3cad0',
+  cityDot: '#c3cad0',
+  water: '#7f93a3',
+  halo: 'rgba(6, 8, 10, 0.92)'
+};
+const IMAGERY_THEME = {
+  border: 'rgba(240, 243, 245, 0.55)',
+  country: '#f4f6f8',
+  state: '#d5dbe0',
+  city: '#eef1f3',
+  cityDot: '#eef1f3',
+  water: '#b9cfe0',
+  halo: 'rgba(0, 0, 0, 0.85)'
+};
+const NIGHT_THEME = {
+  border: 'rgba(170, 182, 205, 0.4)',
+  country: '#dfe5f0',
+  state: '#9da8bd',
+  city: '#f3e3b5',
+  cityDot: '#f3e3b5',
+  water: '#7d8fb0',
+  halo: 'rgba(3, 5, 12, 0.92)'
+};
 
 export const BASEMAPS = [
   {
     id: 'minimal',
+    labelTheme: DARK_THEME,
     label: 'Minimal',
     description: 'Current flat dark style'
   },
   {
     id: 'terrain',
+    labelTheme: DARK_THEME,
     label: 'Terrain',
     description: 'Grey hillshade, rivers, lakes and borders',
     sources: {
@@ -89,12 +107,12 @@ export const BASEMAPS = [
           'line-color': '#253744',
           'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.4, 6, 1.2]
         }
-      },
-      boundaryLayer('#5b646c', 0.7)
+      }
     ]
   },
   {
     id: 'relief',
+    labelTheme: IMAGERY_THEME,
     label: 'Relief',
     description: 'NASA Blue Marble shaded relief with ocean depth',
     sources: {
@@ -112,12 +130,12 @@ export const BASEMAPS = [
         type: 'raster',
         source: 'bm-relief',
         paint: { 'raster-saturation': -0.45, 'raster-brightness-max': 0.5, 'raster-contrast': 0.05 }
-      },
-      boundaryLayer('#c9d0d6', 0.35)
+      }
     ]
   },
   {
     id: 'night',
+    labelTheme: NIGHT_THEME,
     label: 'Night lights',
     description: 'NASA Black Marble city lights',
     sources: {
@@ -135,18 +153,19 @@ export const BASEMAPS = [
         type: 'raster',
         source: 'bm-night',
         paint: { 'raster-saturation': -0.3, 'raster-brightness-max': 0.85 }
-      },
-      boundaryLayer('#8a949c', 0.4)
+      }
     ]
   },
   {
     id: 'openfreemap-dark',
+    labelTheme: DARK_THEME,
     label: 'OpenFreeMap Dark',
     description: 'OpenFreeMap dark vector style',
     styleUrl: 'https://tiles.openfreemap.org/styles/dark'
   },
   {
     id: 'versatiles-dark',
+    labelTheme: DARK_THEME,
     label: 'VersaTiles Dark',
     description: 'VersaTiles colorful-dark vector style',
     styleUrl: 'https://tiles.versatiles.org/assets/styles/colorful-dark/style.json',
@@ -181,7 +200,7 @@ async function loadExternalBasemap(basemap) {
         };
       }
       const layers = (style.layers ?? [])
-        .filter((layer) => layer.type !== 'symbol' && !usesSpriteOrPattern(layer))
+        .filter((layer) => layer.type !== 'symbol' && layer['source-layer'] !== 'boundary' && !/boundary/.test(layer.id) && !usesSpriteOrPattern(layer))
         .map((layer) => ({
           ...layer,
           id: `${PREFIX}${basemap.id}-${layer.id}`,
@@ -235,4 +254,151 @@ export async function applyBasemap(map, basemapId, beforeLayerId) {
     map.addLayer(layer, before);
   }
   return basemap.id;
+}
+
+// Shared reference layers drawn above the data cells: country borders and place names from
+// OpenMapTiles (OpenFreeMap), styled per basemap.
+const NAME = ['coalesce', ['get', 'name:en'], ['get', 'name_en'], ['get', 'name:latin'], ['get', 'name']];
+const REGULAR = ['Noto Sans Regular'];
+const BOLD = ['Noto Sans Bold'];
+const ITALIC = ['Noto Sans Italic'];
+
+export const REFERENCE_BORDER_LAYERS = ['ref-boundary', 'ref-boundary-disputed'];
+export const REFERENCE_LABEL_LAYERS = ['ref-state', 'ref-city-dot', 'ref-city', 'ref-water-name', 'ref-country'];
+
+// Countries too small to name at continental scale.
+const MICROSTATES = ['AD', 'BH', 'LI', 'LU', 'MC', 'MT', 'SG', 'SM', 'VA'];
+
+// More (and smaller) cities appear as the map zooms in.
+const CITY_FILTER = [
+  'all',
+  ['==', ['get', 'class'], 'city'],
+  ['<=', ['coalesce', ['get', 'rank'], 99], ['step', ['zoom'], 2, 3, 4, 4, 7, 5, 10, 6, 99]]
+];
+
+export function buildReferenceLayers(theme = DARK_THEME) {
+  const halo = { 'text-halo-color': theme.halo, 'text-halo-width': 1.4, 'text-halo-blur': 0.4 };
+  const borderWidth = ['interpolate', ['linear'], ['zoom'], 2, 0.6, 6, 1.3];
+  // Symbol placement favours layers drawn on top, so countries come last.
+  return [
+    {
+      id: 'ref-boundary',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'boundary',
+      filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1], ['!=', ['get', 'disputed'], 1]],
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': theme.border, 'line-width': borderWidth }
+    },
+    {
+      id: 'ref-boundary-disputed',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'boundary',
+      filter: ['all', ['==', ['get', 'admin_level'], 2], ['==', ['get', 'disputed'], 1]],
+      paint: { 'line-color': theme.border, 'line-width': borderWidth, 'line-dasharray': [2, 2] }
+    },
+    {
+      id: 'ref-state',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'place',
+      minzoom: 4.5,
+      filter: ['==', ['get', 'class'], 'state'],
+      layout: {
+        'text-field': NAME,
+        'text-font': REGULAR,
+        'text-size': 10.5,
+        'text-transform': 'uppercase',
+        'text-letter-spacing': 0.1,
+        'text-max-width': 7
+      },
+      paint: { 'text-color': theme.state, ...halo }
+    },
+    {
+      id: 'ref-city-dot',
+      type: 'circle',
+      source: 'openmaptiles',
+      'source-layer': 'place',
+      minzoom: 3,
+      filter: CITY_FILTER,
+      paint: {
+        'circle-color': theme.cityDot,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 1.6, 6, 2.6],
+        'circle-stroke-color': theme.halo,
+        'circle-stroke-width': 1
+      }
+    },
+    {
+      id: 'ref-city',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'place',
+      minzoom: 3,
+      filter: CITY_FILTER,
+      layout: {
+        'text-field': NAME,
+        'text-font': ['case', ['==', ['get', 'capital'], 2], ['literal', BOLD], ['literal', REGULAR]],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 3, 10.5, 6, 12.5],
+        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        'text-radial-offset': 0.55,
+        'text-justify': 'auto',
+        'text-max-width': 8,
+        'symbol-sort-key': ['coalesce', ['get', 'rank'], 99]
+      },
+      paint: { 'text-color': theme.city, ...halo }
+    },
+    {
+      id: 'ref-water-name',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'water_name',
+      filter: ['any', ['==', ['get', 'class'], 'ocean'], ['all', ['==', ['get', 'class'], 'sea'], ['>=', ['zoom'], 3.5]]],
+      layout: {
+        'text-field': NAME,
+        'text-font': ITALIC,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 2, 11, 6, 13],
+        'text-letter-spacing': 0.12,
+        'text-max-width': 8
+      },
+      paint: { 'text-color': theme.water, ...halo }
+    },
+    {
+      id: 'ref-country',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'place',
+      filter: [
+        'all',
+        ['==', ['get', 'class'], 'country'],
+        ['<=', ['coalesce', ['get', 'rank'], 9], ['step', ['zoom'], 2, 3, 9]],
+        ['any', ['>=', ['zoom'], 5.5], ['!', ['in', ['coalesce', ['get', 'iso_a2'], ''], ['literal', MICROSTATES]]]]
+      ],
+      layout: {
+        'text-field': NAME,
+        'text-font': BOLD,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 2, 10.5, 6, 14],
+        'text-transform': 'uppercase',
+        'text-letter-spacing': 0.08,
+        'text-max-width': 7,
+        'symbol-sort-key': ['coalesce', ['get', 'rank'], 9]
+      },
+      paint: { 'text-color': theme.country, ...halo }
+    }
+  ];
+}
+
+export function applyReferenceTheme(map, theme = DARK_THEME) {
+  for (const layer of buildReferenceLayers(theme)) {
+    if (!map.getLayer(layer.id)) {
+      continue;
+    }
+    for (const [property, value] of Object.entries(layer.paint ?? {})) {
+      map.setPaintProperty(layer.id, property, value);
+    }
+  }
+}
+
+export function getBasemapTheme(basemapId) {
+  return (BASEMAPS.find((item) => item.id === basemapId) ?? BASEMAPS[0]).labelTheme ?? DARK_THEME;
 }

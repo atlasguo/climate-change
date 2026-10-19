@@ -560,10 +560,10 @@ const RONI_METADATA_SOURCE = {
 
 const REFERENCE_METADATA_SOURCES = [
   {
-    label: 'Places',
-    text: 'Country borders and populated places',
-    url: 'https://www.naturalearthdata.com/downloads/50m-cultural-vectors/',
-    linkLabel: 'Natural Earth'
+    label: 'Map',
+    text: 'Borders and place names from OpenStreetMap contributors',
+    url: 'https://openfreemap.org/',
+    linkLabel: 'OpenFreeMap'
   }
 ];
 
@@ -848,9 +848,8 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   const symbolOpacityValue = root.querySelector('[data-bind="symbol-opacity-value"]');
   const symbolStrokeSlider = root.querySelector('[data-symbol-stroke]');
   const symbolStrokeValue = root.querySelector('[data-bind="symbol-stroke-value"]');
-  const showCountryBorderToggle = root.querySelector('[data-show-country-border]');
-  const showCountryLabelToggle = root.querySelector('[data-show-country-label]');
-  const showCityLabelToggle = root.querySelector('[data-show-city-label]');
+  const showLabelsToggle = root.querySelector('[data-show-labels]');
+
   const symbolUnitInfo = root.querySelector('[data-bind="symbol-unit-info"]');
   const startYearSelect = root.querySelector('[data-range-select="start"]');
   const endYearSelect = root.querySelector('[data-range-select="end"]');
@@ -1125,16 +1124,8 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   symbolStrokeSlider?.addEventListener('input', commitSymbolStrokeOpacity);
   symbolStrokeSlider?.addEventListener('change', commitSymbolStrokeOpacity);
 
-  showCountryBorderToggle?.addEventListener('change', () => {
-    store.setShowCountryBorder(showCountryBorderToggle.checked);
-  });
-
-  showCountryLabelToggle?.addEventListener('change', () => {
-    store.setShowCountryLabel(showCountryLabelToggle.checked);
-  });
-
-  showCityLabelToggle?.addEventListener('change', () => {
-    store.setShowCityLabel(showCityLabelToggle.checked);
+  showLabelsToggle?.addEventListener('change', () => {
+    store.setShowLabels(showLabelsToggle.checked);
   });
 
   for (const button of mobileToggleButtons) {
@@ -1626,16 +1617,8 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
         }
       }
 
-      if (showCountryBorderToggle) {
-        showCountryBorderToggle.checked = Boolean(state.showCountryBorder);
-      }
-
-      if (showCountryLabelToggle) {
-        showCountryLabelToggle.checked = Boolean(state.showCountryLabel);
-      }
-
-      if (showCityLabelToggle) {
-        showCityLabelToggle.checked = Boolean(state.showCityLabel);
+      if (showLabelsToggle) {
+        showLabelsToggle.checked = state.showLabels !== false;
       }
 
       timelineRoni.hidden = !timelineRoniToggle.checked;

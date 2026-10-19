@@ -40,8 +40,11 @@ See [docs/data.md](docs/data.md) for the file formats and how to regenerate the 
 | --- | --- | --- |
 | ERA5 monthly averaged data on single levels, Copernicus Climate Change Service (C3S) | Temperature and precipitation | Copernicus licence. "Contains modified Copernicus Climate Change Service information [2026]." Neither the European Commission nor ECMWF is responsible for any use of this information. |
 | NOAA CPC Relative Oceanic Nino Index (RONI) | ENSO overlay | US Government work, public domain |
-| Natural Earth | Country borders, country and city labels | Public domain |
-| OpenFreeMap basemap tiles | Basemap | © OpenMapTiles, © OpenStreetMap contributors (ODbL) |
+| Natural Earth | Shaded relief in the basemap | Public domain |
+| OpenFreeMap basemap tiles | Basemap, borders and place names | © OpenMapTiles, © OpenStreetMap contributors (ODbL) |
+| Terrain Tiles (Mapzen, AWS Open Data) | Terrain basemap hillshade | Open data, attribution required |
+| NASA EOSDIS GIBS (Blue Marble, Black Marble) | Relief and Night lights basemaps | Public domain, attribution requested |
+| VersaTiles | VersaTiles Dark basemap | CC0 style, © OpenStreetMap contributors |
 
 Place search uses the OpenStreetMap Nominatim service.
 
