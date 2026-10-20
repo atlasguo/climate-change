@@ -344,6 +344,19 @@ body,
   font-family: var(--font-sans);
 }
 
+html,
+body {
+  /* Keep swipes on the map from scrolling, bouncing or pull-to-refreshing the page. */
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.map-stage,
+.map-stage .maplibregl-canvas-container,
+.map-stage .maplibregl-canvas {
+  touch-action: none;
+}
+
 body {
   font-size: var(--text-sm);
   line-height: 1.4;
@@ -1894,6 +1907,13 @@ input[type='range'] {
 
 
 
+/* Touch screens: let swipes on a glyph reach the map so they pan; a tap still selects the cell through the map. */
+@media (hover: none) {
+  .glyph-card {
+    pointer-events: none;
+  }
+}
+
 .glyph-card__svg {
   display: block;
   width: 100%;
@@ -2481,6 +2501,7 @@ input[type='range'] {
     border-width: 1px 0 0;
     border-radius: 12px 12px 0 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
     background: var(--t132);
   }
 

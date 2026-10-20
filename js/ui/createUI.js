@@ -1945,7 +1945,7 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
         }
 
         if (mobilePeekText) {
-          mobilePeekText.textContent = `${previewCell.isGlobal ? 'Global average' : locationValue} · ${formatDetailStatValue(summary.variable, recentValue)}`;
+          mobilePeekText.textContent = `${previewCell.isGlobal ? previewCell.label ?? 'Global average' : locationValue} · ${placeName ?? '—'}`;
         }
         if (changedKey === 'selectedCell' && state.selectedCell && mobileQuery.matches) {
           setMobileSheet(true, 'details');
