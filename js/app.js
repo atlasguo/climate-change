@@ -292,6 +292,9 @@ const SHELL = `
     <section class="panel mobile-map-panel" id="panel-map" aria-label="Map options" data-mobile-map-slot></section>
 
     <nav class="mobile-sheet" aria-label="Panels">
+      <button type="button" class="mobile-sheet__close" data-mobile-close aria-label="Collapse panel">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
       <button type="button" class="mobile-sheet__peek" data-mobile-peek aria-expanded="false" aria-controls="panel-details">
         <span class="mobile-sheet__grip" aria-hidden="true"></span>
         <span class="mobile-sheet__peek-text" data-mobile-peek-text>Global average</span>

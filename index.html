@@ -5,7 +5,7 @@
   <script>
     // Apply the saved colour theme before the first paint to avoid a flash.
     try {
-      if (localStorage.getItem('ccv-theme') === 'light') document.documentElement.dataset.theme = 'light';
+      if (localStorage.getItem('ccv-theme') !== 'dark') document.documentElement.dataset.theme = 'light';
     } catch (error) {}
   </script>
   <meta charset="UTF-8" />
@@ -13,7 +13,7 @@
   <title>Climate Change Visualized</title>
   <meta name="description"
     content="A globe-first climate visualization for exploring temperature and precipitation anomalies over time." />
-  <meta name="theme-color" content="#050607" />
+  <meta name="theme-color" content="#eef0f2" />
   <link rel="icon" href="./assets/favicons/favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="./assets/favicons/favicon.png" />
   <link rel="stylesheet" href="./vendor/maplibre-gl/maplibre-gl.css" />

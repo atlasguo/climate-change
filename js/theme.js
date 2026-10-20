@@ -2,7 +2,7 @@
 // glyphs). Page colours live in css/styles.css; both follow <html data-theme>.
 
 const STORAGE_KEY = 'ccv-theme';
-const DEFAULT_THEME = 'dark';
+const DEFAULT_THEME = 'light';
 
 const COLORS = {
   dark: {

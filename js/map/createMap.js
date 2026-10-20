@@ -1040,7 +1040,7 @@ export async function createMapView({ container, metadata, rawCells, store, onLo
   map.addControl(new GlobeControls(), 'top-right');
 
   const BASEMAP_STORAGE_KEY = 'ccv-basemap';
-  const DEFAULT_BASEMAP = 'terrain';
+  const DEFAULT_BASEMAP = 'minimal';
   let activeBasemap = DEFAULT_BASEMAP;
   try {
     const stored = window.localStorage.getItem(BASEMAP_STORAGE_KEY);

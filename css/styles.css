@@ -2425,6 +2425,7 @@ input[type='range'] {
 @media (max-width: 1024px) {
   :root {
     --sheet-bar: calc(96px + env(safe-area-inset-bottom));
+    --sheet-panel-h: min(46vh, 420px);
     --header-h: 44px;
   }
 
@@ -2495,9 +2496,9 @@ input[type='range'] {
     bottom: var(--sheet-bar);
     z-index: 20;
     display: none;
-    height: min(58vh, 520px);
+    height: var(--sheet-panel-h);
     margin: 0;
-    padding: 16px;
+    padding: 48px 16px 16px;
     border-width: 1px 0 0;
     border-radius: 12px 12px 0 0;
     overflow-y: auto;
@@ -2522,6 +2523,44 @@ input[type='range'] {
     padding: 0 8px env(safe-area-inset-bottom);
     border-top: 1px solid var(--border);
     background: var(--t133);
+  }
+
+  /* Collapse button pinned to the top edge of the open panel. */
+  .mobile-sheet__close {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--sheet-bar) + var(--sheet-panel-h) - 42px);
+    z-index: 22;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 88px;
+    height: 32px;
+    padding: 0;
+    touch-action: none;
+    border: 1px solid var(--t015);
+    border-radius: var(--radius-control);
+    background: var(--bg-card-strong);
+    color: var(--text);
+    transform: translateX(-50%);
+    transition: border-color 180ms ease, background-color 180ms ease;
+    cursor: pointer;
+  }
+
+  .app-shell[data-sheet-open="true"] .mobile-sheet__close {
+    display: inline-flex;
+  }
+
+  /* While the handle is dragged, the open panel and handle follow the finger. */
+  .app-shell[data-sheet-dragging="true"] .panel--left,
+  .app-shell[data-sheet-dragging="true"] .panel--right,
+  .app-shell[data-sheet-dragging="true"] .timeline-dock,
+  .app-shell[data-sheet-dragging="true"] .mobile-map-panel {
+    transform: translateY(var(--sheet-drag, 0px));
+  }
+
+  .app-shell[data-sheet-dragging="true"] .mobile-sheet__close {
+    transform: translate(-50%, var(--sheet-drag, 0px));
   }
 
   .mobile-sheet__peek {
@@ -2722,6 +2761,18 @@ input[type='range'] {
     height: auto;
     border-width: 0 0 0 1px;
     border-radius: 12px 0 0 0;
+  }
+
+  .mobile-sheet__close {
+    top: calc(env(safe-area-inset-top) + 8px);
+    bottom: auto;
+    left: auto;
+    right: calc(min(440px, 58vw) / 2);
+    transform: translateX(50%);
+  }
+
+  .app-shell[data-sheet-dragging="true"] .mobile-sheet__close {
+    transform: translate(50%, var(--sheet-drag, 0px));
   }
 
   .map-search {

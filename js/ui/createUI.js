@@ -1259,6 +1259,36 @@ export function createUI(root, store, metadata, rawCells, roniPoints, globalCell
   mobilePeek.addEventListener('click', () => {
     setMobileSheet(appShell.dataset.sheetOpen !== 'true');
   });
+  // The collapse handle closes the sheet on tap, or when dragged down past a threshold.
+  const mobileClose = root.querySelector('[data-mobile-close]');
+  let dragStartY = null;
+  let dragMoved = false;
+  const setDrag = (px) => appShell.style.setProperty('--sheet-drag', `${px}px`);
+  mobileClose.addEventListener('pointerdown', (event) => {
+    dragStartY = event.clientY;
+    dragMoved = false;
+    mobileClose.setPointerCapture(event.pointerId);
+    appShell.dataset.sheetDragging = 'true';
+  });
+  mobileClose.addEventListener('pointermove', (event) => {
+    if (dragStartY === null) return;
+    const dy = Math.max(0, event.clientY - dragStartY);
+    if (dy > 4) dragMoved = true;
+    setDrag(dy);
+  });
+  const endDrag = (event) => {
+    if (dragStartY === null) return;
+    const dy = event.clientY - dragStartY;
+    dragStartY = null;
+    delete appShell.dataset.sheetDragging;
+    setDrag(0);
+    if (dragMoved && dy > 60) setMobileSheet(false);
+  };
+  mobileClose.addEventListener('pointerup', endDrag);
+  mobileClose.addEventListener('pointercancel', endDrag);
+  mobileClose.addEventListener('click', () => {
+    if (!dragMoved) setMobileSheet(false);
+  });
 
   function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
